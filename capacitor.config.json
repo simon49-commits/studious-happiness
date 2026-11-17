@@ -1,0 +1,6 @@
+{
+  "appId": "com.soloplay.taxkeep",
+  "appName": "TaxKeep",
+  "webDir": "www",
+  "android": { "backgroundColor": "#F4F6F5", "adjustMarginsForEdgeToEdge": "auto" }
+}

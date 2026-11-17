@@ -1,0 +1,46 @@
+name: Build TaxKeep APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install app packages
+        run: npm ci
+
+      - name: Copy the web app into the Android project
+        run: npx cap sync android
+
+      - name: Build the APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Publish the APK as a download
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk TaxKeep.apk
+          gh release delete latest -y --cleanup-tag || true
+          gh release create latest TaxKeep.apk --title "TaxKeep (latest build)" --notes "Built automatically. Tap TaxKeep.apk below on your Android phone to download and install it." --target "${{ github.sha }}"
