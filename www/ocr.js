@@ -7,7 +7,7 @@
         workerPath: 'ocr/worker.min.js',
         corePath: 'ocr/',
         langPath: 'ocr/',
-        gzip: true,
+        gzip: false,
         workerBlobURL: false,
         logger: m => { if (window.__ocrProgress && m.status === 'recognizing text') window.__ocrProgress(m.progress); }
       }).catch(e => { workerPromise = null; throw e; });
