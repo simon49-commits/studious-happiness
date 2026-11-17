@@ -1,14 +1,24 @@
 apply plugin: 'com.android.application'
 
 android {
+    // Same debug key on every build, so new TaxKeep versions install over old ones (keeps your data).
+    // Debug/testing only. Google Play releases use a separate upload key.
+    signingConfigs {
+        debug {
+            storeFile file('taxkeep-debug.jks')
+            storePassword 'taxkeep-debug'
+            keyAlias 'taxkeep'
+            keyPassword 'taxkeep-debug'
+        }
+    }
     namespace "com.soloplay.taxkeep"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
         applicationId "com.soloplay.taxkeep"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 2
+        versionName "1.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

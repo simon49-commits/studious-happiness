@@ -5,6 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>TaxKeep</title>
 <script src="jszip.min.js"></script>
+<script src="ocr/tesseract.min.js"></script>
+<script src="ocr.js"></script>
+<script src="lock.js"></script>
+<script src="reminders.js"></script>
 <script>
 /* App shim: TaxKeep's export asks for a "downloads" capability. In the Android app,
    that is provided by saving the ZIP to the app's cache and opening Android's share sheet. */
@@ -109,7 +113,7 @@ input[type=range],input[type=checkbox]{accent-color:var(--brand)}
 #toast{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:10px 16px;border-radius:10px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:30;max-width:90vw;text-align:center}
 #toast.show{opacity:1}
 .preview{width:100%;max-height:340px;object-fit:contain;border-radius:10px;background:var(--bg);margin-bottom:8px}
-.drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;color:var(--muted)}
+.drop{display:block;border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;cursor:pointer;color:var(--muted)}
 .drop.has{border-style:solid;border-color:var(--brand);color:var(--brand)}
 .empty{text-align:center;padding:26px 10px;color:var(--muted)}
 .disc{font-size:12px;color:var(--muted);text-align:center;padding:4px 10px 12px}
@@ -118,6 +122,50 @@ input[type=range],input[type=checkbox]{accent-color:var(--brand)}
 table.t{width:100%;border-collapse:collapse;font-size:14px}
 table.t td{padding:6px 0;border-bottom:1px solid var(--line)}
 table.t td:last-child{text-align:right;font-weight:600}
+
+/* ---- polish ---- */
+.card{box-shadow:0 1px 2px rgba(16,40,32,.05)}
+header{padding-top:max(16px,env(safe-area-inset-top))}
+.qa{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.qa button{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink)}
+.qa svg{width:24px;height:24px;color:var(--brand)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--brand2);color:var(--brand);white-space:nowrap}
+.pill.grey{background:var(--line);color:var(--muted)}
+.scan{display:flex;align-items:center;gap:10px;background:var(--brand2);color:var(--brand);border-radius:12px;padding:10px 12px;margin:8px 0;font-size:14px}
+.scan.ok{background:var(--okbg);color:var(--ok)}
+.scan.warn{background:var(--warnbg);color:var(--warn)}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.toggle:last-child{border-bottom:0}
+.toggle input{width:22px;height:22px;accent-color:var(--brand);flex:none}
+.map{display:grid;grid-template-columns:1fr 1.4fr;gap:8px;align-items:center}
+.preview-t{font-size:12px;width:100%;border-collapse:collapse;table-layout:fixed}
+.preview-t td{padding:4px 2px;border-bottom:1px solid var(--line);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* ---- lock screen ---- */
+#lockScreen{position:fixed;inset:0;background:var(--bg);z-index:100;display:flex;align-items:center;justify-content:center;padding:24px}
+.lk-in{width:100%;max-width:320px;text-align:center}
+.lk-logo{margin-bottom:10px}
+.lk-title{margin:6px 0 4px;font-size:20px}
+.lk-sub{min-height:38px;font-size:14px;margin:0 0 6px}
+.lk-dots{display:flex;justify-content:center;gap:14px;margin:12px 0 24px}
+.lk-dots i{width:14px;height:14px;border-radius:50%;border:2px solid var(--brand)}
+.lk-dots i.on{background:var(--brand)}
+.lk-dots.shake{animation:sh .35s}
+@keyframes sh{20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+.lk-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.lk-pad button{width:72px;height:72px;justify-self:center;border-radius:50%;border:0;background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.08);font-size:24px;font-weight:600;cursor:pointer;color:var(--ink)}
+.lk-pad .lk-alt{font-size:15px;color:var(--brand);background:none;box-shadow:none}
+.lk-pad .lk-alt svg{width:30px;height:30px}
+.lk-pad button[data-k="del"]{background:none;box-shadow:none;font-size:22px}
+/* ---- onboarding ---- */
+#onb{position:fixed;inset:0;background:var(--bg);z-index:90;display:flex;flex-direction:column;overflow:auto}
+#onb .ob-in{flex:1;max-width:460px;width:100%;margin:0 auto;padding:max(28px,env(safe-area-inset-top)) 22px 28px;display:flex;flex-direction:column}
+.ob-art{height:180px;border-radius:24px;background:linear-gradient(160deg,var(--brand2),var(--card));display:flex;align-items:center;justify-content:center;margin:12px 0 22px;flex:none}
+.ob-art svg{width:92px;height:92px;color:var(--brand)}
+#onb h1{font-size:26px;line-height:1.2;margin:0 0 10px}
+#onb p{color:var(--muted);margin:0 0 12px;font-size:16px}
+.ob-dots{display:flex;gap:6px;justify-content:center;margin:auto 0 16px;padding-top:16px}
+.ob-dots i{width:8px;height:8px;border-radius:99px;background:var(--line)}
+.ob-dots i.on{width:22px;background:var(--brand)}
 </style>
 </head>
 <body>
@@ -129,7 +177,6 @@ table.t td:last-child{text-align:right;font-weight:600}
     </div>
     <span class="badge" id="modeBadge">Loading…</span>
   </header>
-  <div class="proto">Prototype · name is a placeholder</div>
   <main id="view"><div class="empty"><span class="spin"></span> Loading your records…</div></main>
 </div>
 <nav class="tabs"><div class="in" id="tabs"></div></nav>
@@ -163,6 +210,9 @@ const QUESTIONS = [
   {id:'renter',q:'Did you pay rent or property tax? (some provincial credits use it)',docs:['Rent receipts or property tax statement'],cat:'rent'},
   {id:'self',q:'Did you have self-employment or gig income (Uber, DoorDash, freelance, contracting)?',docs:['Income records and any T4A slips','Business receipts','GST/HST records (if registered)','Vehicle mileage log']},
 ];
+const INCOME_TYPES = [['employment','Job (T4)'],['self','Self-employed / gig'],['benefits','EI, pension & benefits'],['invest','Interest & investments'],['rental','Rental'],['other','Other']];
+const INCOME_LABEL = Object.fromEntries(INCOME_TYPES);
+const PLATFORMS = ['Uber','Uber Eats','DoorDash','SkipTheDishes','Instacart','Lyft','Other'];
 const CLOUD_MAX = 230000; // chars of data URL that fit in one cloud document
 
 /* ---------------- helpers ---------------- */
@@ -172,7 +222,7 @@ const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 const money = n => new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD'}).format(n || 0);
 const num = v => { const n = parseFloat(v); return isFinite(n) ? n : 0; };
 const sum = a => a.reduce((x, y) => x + (num(y)), 0);
-const today = () => new Date().toISOString().slice(0, 10);
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const catLabel = c => ALLCATS[c] || 'Other';
 const isBiz = c => String(c).startsWith('b_');
 const safeName = s => String(s || 'item').replace(/[^a-z0-9\-_ ]/gi, '').trim().replace(/\s+/g, '_').slice(0, 40) || 'item';
@@ -270,15 +320,21 @@ function extFor(f){ const m = { 'image/jpeg':'jpg','image/png':'png','image/webp
 function defaultState(){
   return { v:1, profile:{ name:'', year:new Date().getFullYear(), selfEmployed:false, province:'MB' },
     answers:{}, docsDone:{}, room:{ rrspLimit:'', tfsaRoom:'', fhsaOpen:false, fhsaCarry:'', fhsaPrior:'', contribs:[] },
-    income:[], mileage:[], totalKm:{}, setAsidePct:25, lastExport:0 };
+    income:[], mileage:[], totalKm:{}, setAsidePct:25, lastExport:0,
+    reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{} };
 }
-let store, state = defaultState(), receipts = [], tab = 'home', filter = 'all', dl = null, cloudOK = null;
+let store, state = defaultState(), receipts = [], tab = 'home', filter = 'all', dl = null, cloudOK = null, incomeShowAll = false, remStatus = '';
 let saveChain = Promise.resolve(), saveT;
 function persist(){
   clearTimeout(saveT);
   saveT = setTimeout(() => { saveChain = saveChain.then(() => store.saveState(state)).catch(e => toast('Could not save: ' + (e && (e.message || e.code) || 'error'))); }, 450);
 }
-function mergeState(s){ const d = defaultState(); if (!s) return d; return {...d, ...s, profile:{...d.profile, ...(s.profile||{})}, room:{...d.room, ...(s.room||{})}}; }
+function mergeState(s){
+  const d = defaultState(); if (!s) return d;
+  const m = {...d, ...s, profile:{...d.profile, ...(s.profile||{})}, room:{...d.room, ...(s.room||{})}, reminders:{...d.reminders, ...(s.reminders||{})}, waitlist:{...(s.waitlist||{})}};
+  m.income = (m.income || []).map(x => x.type ? x : {...x, type:'self'});
+  return m;
+}
 async function loadAll(){
   state = mergeState(await store.loadState().catch(() => undefined));
   receipts = (await store.listReceipts().catch(() => [])) || [];
@@ -301,7 +357,7 @@ function room(){
   return { rr, tf, fh };
 }
 function biz(){
-  const inc = state.income.filter(x => x.year === Y()), mil = state.mileage.filter(x => x.year === Y());
+  const inc = state.income.filter(x => x.year === Y() && x.type === 'self'), mil = state.mileage.filter(x => x.year === Y());
   const rs = yearReceipts().filter(r => isBiz(r.category));
   const income = sum(inc.map(x => x.amount)), gst = sum(inc.map(x => x.gst));
   const bizKm = sum(mil.map(x => x.km)), totalKm = num(state.totalKm[Y()]);
@@ -326,8 +382,8 @@ function alerts(){
   if (R.tf.set && R.tf.over > 0) out.push(['bad', `TFSA: ${money(R.tf.over)} over your room. CRA charges 1% a month on the excess.`, 'accounts']);
   if (R.fh.open && R.fh.over > 0) out.push(['bad', `FHSA: ${money(R.fh.over)} over this year's participation room.`, 'accounts']);
   if (state.profile.selfEmployed){
-    const n = nextInstalment(); out.push(['info', `Next CRA instalment date: ${n.toLocaleDateString('en-CA',{month:'long',day:'numeric',year:'numeric'})} (only if CRA asked you to pay instalments).`, 'business']);
-    if (!state.mileage.some(m => m.year === Y())) out.push(['warn', 'No business trips logged this year. CRA expects a mileage log to claim vehicle costs.', 'business']);
+    const n = nextInstalment(); out.push(['info', `Next CRA instalment date: ${n.toLocaleDateString('en-CA',{month:'long',day:'numeric',year:'numeric'})} (only if CRA asked you to pay instalments).`, 'income']);
+    if (!state.mileage.some(m => m.year === Y())) out.push(['warn', 'No business trips logged this year. CRA expects a mileage log to claim vehicle costs.', 'income']);
   }
   if (store && store.kind !== 'cloud' && receipts.length && (!state.lastExport || Date.now() - state.lastExport > 60 * 864e5)) out.push(['warn', 'Your records live only on this device. Export a backup copy so a lost phone doesn’t mean lost receipts.', 'more']);
   if (store && store.kind === 'memory') out.push(['bad', 'This device blocked on-device storage, so nothing will be kept after you close the app.', 'more']);
@@ -341,11 +397,11 @@ const ICONS = {
   checklist:'<path d="M9 6h11M9 12h11M9 18h11M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>',
   accounts:'<path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18"/>',
   business:'<path d="M4 8h16v11H4zM9 8V5h6v3M4 13h16"/>',
+  income:'<path d="M12 3v18M16.5 7H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H7"/>',
   more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>' };
 function renderTabs(){
-  const list = [['home','Home'],['receipts','Receipts'],['checklist','Checklist'],['accounts','RRSP/TFSA']];
-  if (state.profile.selfEmployed) list.push(['business','Business']);
-  list.push(['more','Export']);
+  const list = [['home','Home'],['receipts','Receipts'],['income','Income'],['checklist','Checklist'],['accounts','Savings'],['more','More']];
+  if (tab === 'business') tab = 'income';
   if (!list.some(t => t[0] === tab)) tab = 'home';
   $('#tabs').innerHTML = list.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>${l}</button>`).join('');
 }
@@ -353,7 +409,7 @@ function render(){
   $('#modeBadge').textContent = store ? (store.kind === 'cloud' ? '☁ Cloud vault' : store.kind === 'device' ? '🔒 On this device' : '⚠ Not saved') : 'Loading…';
   renderTabs();
   const v = $('#view');
-  v.innerHTML = ({ home:vHome, receipts:vReceipts, checklist:vChecklist, accounts:vAccounts, business:vBusiness, more:vMore }[tab] || vHome)();
+  v.innerHTML = ({ home:vHome, receipts:vReceipts, income:vIncome, checklist:vChecklist, accounts:vAccounts, business:vIncome, more:vMore }[tab] || vHome)();
   if (tab === 'receipts') loadThumbs();
 }
 function yearPicker(){
@@ -368,10 +424,15 @@ function vHome(){
   const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
   return `
   <div class="row between"><h2>Hi${name} 👋</h2>${yearPicker()}</div>
-  ${!receipts.length && !Object.keys(state.answers).length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
+  <div class="qa">
+    <button data-act="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Snap receipt</button>
+    <button data-act="addIncome"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS.income}</svg>Add income</button>
+    <button data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export</button>
+  </div>
+  ${!receipts.length && !state.income.length && !Object.keys(state.answers).length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, log your income, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
   <div class="grid2">
-    <div class="card stat"><div class="n">${rs.length}</div><div class="l">receipts in ${Y()}</div></div>
-    <div class="card stat"><div class="n">${money(sum(rs.map(r => r.amount)))}</div><div class="l">tracked</div></div>
+    <div class="card stat"><div class="n">${money(sum(rs.map(r => r.amount)))}</div><div class="l">${rs.length} receipt${rs.length === 1 ? '' : 's'} in ${Y()}</div></div>
+    <div class="card stat"><div class="n">${money(sum(state.income.filter(x => x.year === Y()).map(x => x.amount)))}</div><div class="l">income logged</div></div>
     <div class="card stat"><div class="n">${docs.length ? done + '/' + docs.length : '–'}</div><div class="l">documents gathered</div></div>
     <div class="card stat"><div class="n">${R.rr.set ? money(R.rr.left) : '–'}</div><div class="l">RRSP room left</div></div>
   </div>
@@ -443,12 +504,38 @@ function vAccounts(){
   </div>
   <p class="disc">Limits come from your own CRA records. TaxKeep only does the arithmetic.</p>`;
 }
-function vBusiness(){
+function vIncome(){
+  const yi = state.income.filter(x => x.year === Y());
+  const byType = {}; yi.forEach(x => byType[x.type] = (byType[x.type] || 0) + num(x.amount));
+  const list = yi.slice().sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const show = incomeShowAll ? list : list.slice(0, 25);
+  return `
+  <div class="row between"><h2>Income</h2>${yearPicker()}</div>
+  <div class="grid2">
+    <div class="card stat"><div class="n">${money(sum(yi.map(x => x.amount)))}</div><div class="l">total income ${Y()}</div></div>
+    <div class="card stat"><div class="n">${money(sum(yi.map(x => x.tax)))}</div><div class="l">tax already deducted</div></div>
+  </div>
+  ${Object.keys(byType).length ? `<div class="card"><h3>By type</h3><table class="t">${INCOME_TYPES.filter(t => byType[t[0]]).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${money(byType[k])}</td></tr>`).join('')}</table></div>` : ''}
+  <div class="card"><div class="row between"><h3>Income entries</h3><button class="btn sec" data-act="addIncome">+ Add</button></div>
+    <div class="list">${show.length ? show.map(x => `<div class="item" data-editincome="${x.id}"><div class="grow"><div class="ell"><b>${esc(x.client || INCOME_LABEL[x.type] || 'Income')}</b></div><div class="small muted ell">${esc(x.date)} · ${esc(INCOME_LABEL[x.type] || 'Income')}${num(x.tax) ? ' · tax ' + money(x.tax) : ''}${num(x.gst) ? ' · GST/HST ' + money(x.gst) : ''}</div></div><div class="amt">${money(x.amount)}</div></div>`).join('') : '<div class="empty small">Add pay from your job, gig apps, EI, interest or anything else you earned.</div>'}</div>
+    ${list.length > show.length ? `<button class="btn ghost block" data-act="incomeAll">Show all ${list.length}</button>` : ''}
+  </div>
+  <div class="card"><h3>Gig and delivery apps</h3>
+    <p class="small muted">Import your earnings from Uber, DoorDash, SkipTheDishes, Instacart and others. Download your earnings or payout statement as a CSV file from the app's website, then import it here.</p>
+    <label class="btn block" style="display:block;text-align:center">Import earnings file (CSV)<input type="file" id="csvIn" accept=".csv,text/csv,text/plain,text/comma-separated-values" hidden></label>
+    <div style="margin-top:14px"><b class="small">Connect your accounts directly</b>
+      ${['Uber','DoorDash','SkipTheDishes','Instacart'].map(pl => `<div class="toggle"><span>${pl} <span class="pill grey">Coming soon</span></span><label class="row small"><input type="checkbox" data-wait="${pl}" ${state.waitlist[pl] ? 'checked' : ''}> I use this</label></div>`).join('')}
+      <p class="small muted">These apps don't let other apps connect to your account yet. Tick the ones you use, and they'll be first in line when connections become available.</p>
+    </div>
+  </div>
+  ${state.profile.selfEmployed ? vBusinessParts() : `<p class="disc">Self-employed or doing gig work? Add a "Self-employed / gig" income entry, or turn it on in More → Profile, to get expense, mileage and set-aside tools.</p>`}`;
+}
+function vBusinessParts(){
   const B = biz(), n = nextInstalment();
   return `
-  <div class="row between"><h2>Business</h2>${yearPicker()}</div>
+  <h2 style="margin-top:22px">Self-employed</h2>
   <div class="grid2">
-    <div class="card stat"><div class="n">${money(B.income)}</div><div class="l">income logged</div></div>
+    <div class="card stat"><div class="n">${money(B.income)}</div><div class="l">self-employed income</div></div>
     <div class="card stat"><div class="n">${money(B.exp)}</div><div class="l">deductible expenses (est.)</div></div>
     <div class="card stat"><div class="n">${money(B.net)}</div><div class="l">net income (est.)</div></div>
     <div class="card stat"><div class="n">${money(B.gst)}</div><div class="l">GST/HST collected</div></div>
@@ -458,13 +545,10 @@ function vBusiness(){
     <p>Put aside about <b>${money(B.setAside)}</b> of your ${money(Math.max(0, B.net))} net income.</p>
     <p class="small muted">You pick the %. Self-employed people also pay both halves of CPP, so ask your preparer what % fits you. Next instalment date: ${n.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}. Balance owing is due April 30; your return is due June 15.</p>
   </div>
-  <div class="card"><div class="row between"><h3>Income</h3><button class="btn sec" data-act="addIncome">+ Add</button></div>
-    <div class="list">${B.inc.length ? B.inc.sort((a, b) => b.date.localeCompare(a.date)).map(x => `<div class="item" data-delincome="${x.id}"><div class="grow"><b>${esc(x.client || 'Income')}</b><div class="small muted">${esc(x.date)}${num(x.gst) ? ' · GST/HST ' + money(x.gst) : ''} · tap to remove</div></div><div class="amt">${money(x.amount)}</div></div>`).join('') : '<div class="empty small">Log payments from clients or gig apps.</div>'}</div>
-  </div>
   <div class="card"><div class="row between"><h3>Mileage log</h3><button class="btn sec" data-act="addTrip">+ Trip</button></div>
     <label class="f">Total km driven in ${Y()} (odometer end minus start)</label>
     <input type="number" data-totalkm value="${esc(state.totalKm[Y()] || '')}" placeholder="e.g. 18000">
-    <p class="small">Business km: <b>${B.bizKm.toLocaleString('en-CA')}</b>${B.usePct !== null ? ` · business use: <b>${Math.round(B.usePct * 100)}%</b> (applied to vehicle costs above)` : ''}</p>
+    <p class="small">Business km: <b>${B.bizKm.toLocaleString('en-CA')}</b>${B.usePct !== null ? ` · business use: <b>${Math.round(B.usePct * 100)}%</b> (applied to vehicle costs)` : ''}</p>
     <div class="list">${B.mil.length ? B.mil.sort((a, b) => b.date.localeCompare(a.date)).map(x => `<div class="item" data-deltrip="${x.id}"><div class="grow"><b>${esc(x.purpose || 'Trip')}</b><div class="small muted">${esc(x.date)} · tap to remove</div></div><div class="amt">${num(x.km)} km</div></div>`).join('') : '<div class="empty small">No trips yet.</div>'}</div>
   </div>
   <p class="disc">Meals count at 50%. Estimates are for planning only; your preparer makes the final numbers.</p>`;
@@ -472,7 +556,7 @@ function vBusiness(){
 function vMore(){
   const mode = store ? store.kind : 'device';
   return `
-  <h2>Export & settings</h2>
+  <h2>More</h2>
   <div class="card"><h3>Your tax package</h3>
     <p class="small muted">One ZIP with every receipt file sorted by category, plus summaries for your preparer: receipts, checklist, RRSP/TFSA/FHSA and business. You can save it to Drive or Files, or send it by email.</p>
     <div class="row" style="margin-bottom:8px">${yearPicker()}</div>
@@ -484,7 +568,19 @@ function vMore(){
   <div class="card"><h3>Where your records are kept</h3>
     <div class="mode ${mode !== 'cloud' ? 'on' : ''}" data-mode="device"><b>🔒 On this device</b><span class="small muted">Stays on this phone only. Never sent to a server. Export a backup often, since CRA wants records kept 6 years.</span></div>
     <div class="mode ${mode === 'cloud' ? 'on' : ''}" data-mode="cloud"><b>☁ Cloud vault</b><span class="small muted">Private to your account, available on any device you sign in on. ${cloudOK === false ? '<br><b>Coming in the full version of the app.</b>' : ''}</span></div>
-    <p class="small muted">Switching moves your records to the other place. Prototype note: the full app adds encryption with a key only you hold.</p>
+    <p class="small muted">Switching moves your records to the other place.</p>
+  </div>
+  <div class="card"><h3>Security</h3>
+    <div class="toggle"><span>Lock TaxKeep with a PIN</span><input type="checkbox" data-lock ${window.TaxKeepLock && TaxKeepLock.isOn() ? 'checked' : ''}></div>
+    ${window.TaxKeepLock && TaxKeepLock.isOn() ? `<div class="toggle"><span>Unlock with fingerprint</span><input type="checkbox" data-bio ${TaxKeepLock.bioOn() ? 'checked' : ''}></div><button class="btn ghost" data-act="lockNow">Lock now</button>` : '<p class="small muted">Asks for your PIN when you open TaxKeep, so nobody else can see your records.</p>'}
+  </div>
+  <div class="card"><h3>Reminders</h3>
+    ${window.TaxKeepReminders && TaxKeepReminders.available() ? '' : '<p class="small muted">Reminders work in the installed Android app.</p>'}
+    <div class="toggle"><span>Tax deadlines<br><span class="small muted">RRSP deadline, April 30${state.profile.selfEmployed ? ', June 15' : ''}</span></span><input type="checkbox" data-rem="deadlines" ${state.reminders.on && state.reminders.deadlines ? 'checked' : ''}></div>
+    ${state.profile.selfEmployed ? `<div class="toggle"><span>Instalment dates<br><span class="small muted">A week before each one</span></span><input type="checkbox" data-rem="instalments" ${state.reminders.on && state.reminders.instalments ? 'checked' : ''}></div>` : ''}
+    <div class="toggle"><span>Monthly receipt nudge<br><span class="small muted">1st of each month</span></span><input type="checkbox" data-rem="monthly" ${state.reminders.on && state.reminders.monthly ? 'checked' : ''}></div>
+    ${remStatus ? `<p class="small muted">${esc(remStatus)}</p>` : ''}
+    <button class="btn sec" data-act="testRem" style="margin-top:6px">Send a test reminder</button>
   </div>
   <div class="card"><h3>Profile</h3>
     <label class="f">First name</label><input type="text" data-prof="name" value="${esc(state.profile.name)}" placeholder="Optional">
@@ -492,7 +588,7 @@ function vMore(){
     <label class="row" style="margin-top:12px"><input type="checkbox" data-se ${state.profile.selfEmployed ? 'checked' : ''}> I'm self-employed or do gig work</label>
   </div>
   <div class="card"><h3>Data</h3><div class="row"><button class="btn sec" data-act="demo">Add sample data</button><button class="btn danger" data-act="wipe">Delete everything</button></div></div>
-  <p class="disc">TaxKeep prototype · organizes records, not tax advice.</p>`;
+  <p class="disc">TaxKeep · organizes your records, not tax advice.</p>`;
 }
 
 /* ---------------- modal ---------------- */
@@ -527,8 +623,12 @@ function receiptForm(r){
       pendingFile = fit;
       $('#drop').classList.add('has'); $('#dropTxt').textContent = '✓ ' + file.name + (fit !== f ? ' (resized)' : '');
       $('#prev').innerHTML = /^image/.test(fit.type) ? `<img class="preview" src="${fit.dataUrl}" alt="Receipt preview">` : '';
+      if (/^image\/(jpeg|png|webp|gif|bmp)/.test(fit.type) && window.TaxKeepOCR) autoFill(fit.dataUrl);
     } catch(e){ $('#dropTxt').textContent = 'Could not read that file.'; }
+    window.__tkPauseLock = false;
   };
+  $('#fCat').addEventListener('change', () => { $('#fCat').dataset.touched = '1'; });
+  if (!r && window.TaxKeepOCR) TaxKeepOCR.warmUp();
   $('#saveR').onclick = async () => {
     const amt = num($('#fAmt').value), date = $('#fDate').value;
     if (!date){ toast('Add a date'); return; }
@@ -543,6 +643,21 @@ function receiptForm(r){
     } catch(e){ $('#saveR').disabled = false; toast('Could not save: ' + (e && (e.message || e.code) || 'error')); }
   };
 }
+function autoFill(dataUrl){
+  const box = document.createElement('div'); box.className = 'scan'; box.innerHTML = '<span class="spin"></span><span id="ocrMsg">Reading your receipt…</span>';
+  $('#prev').appendChild(box);
+  window.__ocrProgress = p => { const m = document.getElementById('ocrMsg'); if (m) m.textContent = `Reading your receipt… ${Math.round(p * 100)}%`; };
+  TaxKeepOCR.readReceipt(dataUrl, state.profile.selfEmployed).then(r => {
+    if (!box.isConnected) return;
+    const got = [];
+    if (r.vendor && !$('#fVendor').value.trim()){ $('#fVendor').value = r.vendor; got.push('store'); }
+    if (r.date && (!$('#fDate').value || $('#fDate').value === today())){ $('#fDate').value = r.date; got.push('date'); }
+    if (r.total && !$('#fAmt').value){ $('#fAmt').value = r.total.toFixed(2); got.push('total'); }
+    if (r.category && !$('#fCat').dataset.touched && $('#fCat').querySelector(`option[value="${r.category}"]`)){ $('#fCat').value = r.category; got.push('category'); }
+    box.className = got.length ? 'scan ok' : 'scan warn';
+    box.textContent = got.length ? `✓ Filled in the ${got.join(', ')} from your photo. Please check them.` : 'Couldn\'t read this receipt clearly. Please fill it in.';
+  }).catch(() => { if (box.isConnected){ box.className = 'scan warn'; box.textContent = 'Couldn\'t read this receipt. Please fill it in.'; } });
+}
 async function openReceipt(id){
   const r = receipts.find(x => x.id === id); if (!r) return;
   receiptForm(r);
@@ -556,6 +671,176 @@ function simpleForm(title, fields, onSave){
     <div class="row" style="margin-top:14px"><button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="sfSave">Save</button></div>`);
   $('#sfSave').onclick = () => { const v = {}; fields.forEach(f => { if (f.id) v[f.id] = $('#sf_' + f.id).value; }); if (onSave(v) !== false){ closeSheet(); persist(); render(); } };
 }
+
+/* ---------------- income ---------------- */
+function incomeForm(x){
+  const def = x ? x.type : (state.profile.selfEmployed ? 'self' : 'employment');
+  openSheet(`<h3>${x ? 'Edit income' : 'Add income'}</h3>
+    <label class="f">Type</label><select id="iType">${INCOME_TYPES.map(([k, l]) => `<option value="${k}" ${def === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <label class="f">From (employer, app or payer)</label><input type="text" id="iSrc" value="${esc(x ? x.client : '')}" placeholder="e.g. your employer, Uber, Service Canada">
+    <div class="grid2"><div><label class="f">Date received</label><input type="date" id="iDate" value="${esc(x ? x.date : today())}"></div>
+    <div><label class="f">Amount ($)</label><input type="number" inputmode="decimal" step="0.01" id="iAmt" value="${x ? esc(x.amount) : ''}" placeholder="0.00"></div></div>
+    <div id="iTaxRow"><label class="f">Income tax deducted ($, optional)</label><input type="number" inputmode="decimal" step="0.01" id="iTax" value="${x && num(x.tax) ? esc(x.tax) : ''}" placeholder="0.00"></div>
+    <div id="iGstRow"><label class="f">GST/HST collected ($, only if you're registered)</label><input type="number" inputmode="decimal" step="0.01" id="iGst" value="${x && num(x.gst) ? esc(x.gst) : ''}" placeholder="0.00"></div>
+    <p class="small muted" id="iHint"></p>
+    <div class="row" style="margin-top:14px">${x ? '<button class="btn danger" id="iDel">Delete</button>' : ''}<button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="iSave">Save</button></div>`);
+  const hints = {
+    employment:'Tip: your T4 shows your total pay (box 14) and tax deducted (box 22). Add each pay cheque, or just the T4 totals.',
+    self:'Add each payout, or import a CSV file from your gig app on the Income tab.',
+    benefits:'EI, CPP, OAS or pension payments. Your T4E / T4A slips show the yearly totals.',
+    invest:'Bank interest, dividends or gains. Your T5 / T3 slips show the totals.',
+    rental:'Rent you received. Keep receipts for rental costs too.', other:'' };
+  const upd = () => { const t = $('#iType').value; $('#iGstRow').style.display = t === 'self' ? '' : 'none'; $('#iTaxRow').style.display = ['employment','benefits','other'].includes(t) ? '' : 'none'; $('#iHint').textContent = hints[t] || ''; };
+  $('#iType').onchange = upd; upd();
+  if (x) $('#iDel').onclick = () => { state.income = state.income.filter(i => i.id !== x.id); closeSheet(); persist(); render(); toast('Deleted'); };
+  $('#iSave').onclick = () => {
+    const amt = num($('#iAmt').value); if (!amt){ toast('Enter an amount'); return; }
+    const d = $('#iDate').value || today(), t = $('#iType').value;
+    const e = { ...(x || {}), id: x ? x.id : newId(), year: Number(d.slice(0, 4)), date: d, type: t, client: $('#iSrc').value.trim(), amount: amt,
+      tax: ['employment','benefits','other'].includes(t) ? num($('#iTax').value) : 0, gst: t === 'self' ? num($('#iGst').value) : 0 };
+    state.income = state.income.filter(i => i.id !== e.id).concat(e);
+    closeSheet();
+    if (t === 'self' && !state.profile.selfEmployed){ state.profile.selfEmployed = true; toast('Saved. Self-employed tools are now on.'); } else toast('Saved');
+    if (e.year !== Y()) { state.profile.year = e.year; }
+    persist(); render();
+  };
+}
+function parseCSV(text){
+  text = text.replace(/^﻿/, '');
+  const first = text.split(/\r?\n/)[0] || '';
+  const delim = [',', ';', '\t'].sort((a, b) => first.split(b).length - first.split(a).length)[0];
+  const rows = []; let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (q){ if (c === '"'){ if (text[i + 1] === '"'){ cell += '"'; i++; } else q = false; } else cell += c; }
+    else if (c === '"') q = true;
+    else if (c === delim){ row.push(cell); cell = ''; }
+    else if (c === '\n' || c === '\r'){ if (c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; }
+    else cell += c;
+  }
+  if (cell !== '' || row.length){ row.push(cell); rows.push(row); }
+  return rows.filter(r => r.some(c => String(c).trim() !== ''));
+}
+function parseMoney(v){
+  let t = String(v || '').trim(); if (!t) return NaN;
+  const neg = /^\(.*\)$/.test(t) || /^-/.test(t.replace(/[\s$]|CAD|CA/g, '')) || /-$/.test(t);
+  t = t.replace(/[^0-9.,]/g, '');
+  if (/,\d{2}$/.test(t) && !/\.\d{2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); else t = t.replace(/,/g, '');
+  const n = parseFloat(t); return isFinite(n) ? (neg ? -n : n) : NaN;
+}
+function parseAnyDate(v){
+  const t = String(v || '').trim(); if (!t) return null;
+  let m = t.match(/(20\d{2})[-\/.](\d{1,2})[-\/.](\d{1,2})/);
+  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`;
+  m = t.match(/\b(\d{1,2})[\/.-](\d{1,2})[\/.-](20\d{2}|\d{2})\b/);
+  if (m){ let a = +m[1], b = +m[2], y = +m[3]; if (y < 100) y += 2000; let mo = a, d = b; if (a > 12){ mo = b; d = a; } if (mo >= 1 && mo <= 12 && d >= 1 && d <= 31) return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`; }
+  const ms = Date.parse(t.replace(/(\d)(st|nd|rd|th)\b/, '$1'));
+  if (isFinite(ms)){ const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+  return null;
+}
+async function importCSV(file){
+  let rows;
+  try { rows = parseCSV(await file.text()); } catch(e){ toast('Could not read that file.'); return; }
+  if (rows.length < 2){ toast('That file has no rows to import.'); return; }
+  const head = rows[0].map(h => String(h).trim()), body = rows.slice(1, 5001);
+  const numericShare = c => body.filter(r => isFinite(parseMoney(r[c]))).length / body.length;
+  const dateShare = c => body.filter(r => parseAnyDate(r[c])).length / body.length;
+  const find = (re, ok) => { let i = head.findIndex((h, k) => re.test(h) && ok(k)); return i; };
+  let dC = find(/date|time|day|period|week|paid|payout/i, k => dateShare(k) > 0.6);
+  if (dC < 0) dC = head.findIndex((h, k) => dateShare(k) > 0.6);
+  let aC = find(/^net|net (pay|earnings|payout|amount)|total (pay|earnings|payout)|payout|earnings|amount|total|pay/i, k => numericShare(k) > 0.6 && k !== dC);
+  if (aC < 0) for (let k = head.length - 1; k >= 0; k--) if (k !== dC && numericShare(k) > 0.6){ aC = k; break; }
+  let sC = -1;
+  for (const re of [/desc/i, /memo|details|note/i, /activity|trip|type|category/i]){ sC = find(re, k => k !== dC && k !== aC); if (sC >= 0) break; }
+  const blob = (file.name + ' ' + head.join(' ')).toLowerCase();
+  const plat = /uber ?eats/.test(blob) ? 'Uber Eats' : /uber/.test(blob) ? 'Uber' : /doordash|dasher/.test(blob) ? 'DoorDash' : /skip/.test(blob) ? 'SkipTheDishes' : /instacart/.test(blob) ? 'Instacart' : /lyft/.test(blob) ? 'Lyft' : 'Other';
+  const opts = (sel, none) => (none ? `<option value="-1">${none}</option>` : '') + head.map((h, i) => `<option value="${i}" ${i === sel ? 'selected' : ''}>${esc(h || 'Column ' + (i + 1))}</option>`).join('');
+  openSheet(`<h3>Import earnings</h3><p class="small muted">${esc(file.name)} · ${body.length} rows. Check that the columns are right.</p>
+    <div class="map"><label class="small">App</label><select id="cP">${PLATFORMS.map(x => `<option ${x === plat ? 'selected' : ''}>${x}</option>`).join('')}</select>
+    <label class="small">Date column</label><select id="cD">${opts(dC)}</select>
+    <label class="small">Amount you were paid</label><select id="cA">${opts(aC)}</select>
+    <label class="small">Description (optional)</label><select id="cS">${opts(sC, 'None')}</select></div>
+    <div id="cPrev" style="margin-top:12px"></div>
+    <div class="row" style="margin-top:14px"><button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="cGo">Import</button></div>`);
+  let parsed = [];
+  const build = () => {
+    const d = +$('#cD').value, a = +$('#cA').value, sc = +$('#cS').value, pl = $('#cP').value;
+    parsed = []; let bad = 0, dup = 0, nonPos = 0;
+    body.forEach(r => {
+      const date = parseAnyDate(r[d]), amt = parseMoney(r[a]);
+      if (!date || !isFinite(amt)){ bad++; return; }
+      if (amt <= 0){ nonPos++; return; }
+      const desc = sc >= 0 ? String(r[sc] || '').trim().slice(0, 60) : '';
+      const key = [pl, date, amt.toFixed(2), desc].join('|');
+      if (state.income.some(i => i.key === key) || parsed.some(i => i.key === key)){ dup++; return; }
+      parsed.push({ id:newId(), year:Number(date.slice(0, 4)), date, type:'self', client: pl + (desc ? ' – ' + desc : ''), amount:Math.round(amt * 100) / 100, tax:0, gst:0, key, imported:true });
+    });
+    const total = sum(parsed.map(x => x.amount)), years = [...new Set(parsed.map(x => x.year))].sort();
+    $('#cPrev').innerHTML = `<div class="scan ${parsed.length ? 'ok' : 'warn'}">${parsed.length ? `Ready to import <b>&nbsp;${parsed.length}&nbsp;</b> payments, ${money(total)} (${years.join(', ')})` : 'No payments found with these columns.'}</div>
+      ${(bad || dup || nonPos) ? `<p class="small muted">Skipped: ${[bad && bad + ' rows without a date or amount', nonPos && nonPos + ' zero or negative rows', dup && dup + ' already imported'].filter(Boolean).join(', ')}.</p>` : ''}
+      ${parsed.length ? `<table class="preview-t">${parsed.slice(0, 4).map(x => `<tr><td>${x.date}</td><td>${esc(x.client)}</td><td style="text-align:right">${money(x.amount)}</td></tr>`).join('')}</table>` : ''}`;
+    $('#cGo').disabled = !parsed.length;
+  };
+  ['#cP','#cD','#cA','#cS'].forEach(id => $(id).onchange = build); build();
+  $('#cGo').onclick = () => {
+    state.income = state.income.concat(parsed);
+    const turnedOn = !state.profile.selfEmployed; state.profile.selfEmployed = true;
+    const yrs = parsed.map(x => x.year); if (yrs.length && !yrs.includes(Y())) state.profile.year = Math.max(...yrs);
+    closeSheet(); persist(); tab = 'income'; render();
+    toast(`Imported ${parsed.length} payments` + (turnedOn ? '. Self-employed tools are now on.' : ''));
+  };
+}
+
+/* ---------------- reminders ---------------- */
+async function syncReminders(){
+  if (!window.TaxKeepReminders || !TaxKeepReminders.available()) return;
+  const r = await TaxKeepReminders.sync({ ...(state.reminders.on ? state.reminders : { deadlines:false, instalments:false, monthly:false }), selfEmployed: state.profile.selfEmployed }).catch(() => ({ ok:false }));
+  if (r.ok) remStatus = r.count ? `${r.count} reminders set. Next: "${r.next.title}" on ${r.next.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}.` : '';
+  else remStatus = r.reason === 'denied' ? 'Notifications are blocked. Turn them on in your phone\'s Settings → Apps → TaxKeep → Notifications.' : '';
+  if (tab === 'more') render();
+}
+
+/* ---------------- welcome screens ---------------- */
+function showOnboarding(){
+  const art = {
+    files:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6M9 16h3"/></svg>',
+    scan:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3M8 9h8M8 12h8M8 15h5"/></svg>',
+    lock:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v2"/></svg>' };
+  const slides = [
+    ['files', 'All your tax paperwork in one place', 'Snap receipts, log your income and see which slips you still need, all year long.'],
+    ['scan', 'Snap it, TaxKeep reads it', 'Take a photo of a receipt and TaxKeep fills in the store, date and total for you, right on your phone.'],
+    ['lock', 'Private by default', 'Your records stay on this phone. Lock the app with a PIN or fingerprint, and send your preparer a tidy package in one tap.'] ];
+  const el = document.createElement('div'); el.id = 'onb'; document.body.appendChild(el);
+  let i = 0;
+  const dots = n => `<div class="ob-dots">${[0,1,2,3].map(k => `<i class="${k === n ? 'on' : ''}"></i>`).join('')}</div>`;
+  const show = () => {
+    if (i < slides.length){
+      const [a, h, t] = slides[i];
+      el.innerHTML = `<div class="ob-in"><div class="row between"><b>TaxKeep</b><button class="btn ghost" data-ob="skip">Skip</button></div><div class="ob-art">${art[a]}</div><h1>${h}</h1><p>${t}</p>${dots(i)}<button class="btn block" data-ob="next">Next</button></div>`;
+    } else {
+      el.innerHTML = `<div class="ob-in"><h1 style="margin-top:20px">Let's set you up</h1><p>You can change any of this later in More.</p>
+        <label class="f">First name (optional)</label><input type="text" id="obName" value="${esc(state.profile.name)}">
+        <label class="f">Province or territory</label><select id="obProv">${['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'].map(p => `<option ${p === state.profile.province ? 'selected' : ''}>${p}</option>`).join('')}</select>
+        <div class="toggle" style="margin-top:10px"><span>I'm self-employed or do gig work<br><span class="small muted">Uber, DoorDash, freelance, contracting</span></span><input type="checkbox" id="obSelf" ${state.profile.selfEmployed ? 'checked' : ''}></div>
+        <div class="toggle"><span>Remind me about tax deadlines</span><input type="checkbox" id="obRem" checked></div>
+        <div class="toggle"><span>Lock TaxKeep with a PIN</span><input type="checkbox" id="obLock"></div>
+        ${dots(3)}<button class="btn block" data-ob="done">Start using TaxKeep</button></div>`;
+    }
+  };
+  const finish = async (skip) => {
+    if (!skip){
+      state.profile.name = $('#obName').value.trim(); state.profile.province = $('#obProv').value; state.profile.selfEmployed = $('#obSelf').checked;
+      state.reminders.on = $('#obRem').checked;
+    }
+    const wantLock = !skip && $('#obLock').checked;
+    state.onboarded = true; persist(); el.remove(); render();
+    if (wantLock && window.TaxKeepLock){ if (await TaxKeepLock.setupPin()) toast('PIN lock is on'); render(); }
+    if (state.reminders.on) syncReminders();
+  };
+  el.addEventListener('click', e => { const b = e.target.closest('[data-ob]'); if (!b) return; const k = b.dataset.ob; if (k === 'next'){ i++; show(); } else if (k === 'skip'){ i = slides.length; show(); } else if (k === 'done') finish(false); });
+  show();
+}
+function pauseLockFor(ms){ window.__tkPauseLock = true; clearTimeout(window.__tkPauseT); window.__tkPauseT = setTimeout(() => { window.__tkPauseLock = false; }, ms || 120000); }
 
 /* ---------------- actions ---------------- */
 async function switchMode(target){
@@ -608,8 +893,9 @@ async function addDemo(){
   if (state.room.rrspLimit === '') state.room.rrspLimit = '9500';
   if (state.room.tfsaRoom === '') state.room.tfsaRoom = '14000';
   state.room.contribs.push({ id:newId(), year:y, acct:'rrsp', type:'contrib', date:`${y}-02-20`, amount:4000 }, { id:newId(), year:y, acct:'tfsa', type:'contrib', date:`${y}-01-10`, amount:6000 });
+  state.income.push({ id:newId(), year:y, date:`${y}-06-30`, type:'employment', client:'Sample employer (T4, Jan–Jun)', amount:21400, tax:3150, gst:0 });
   if (state.profile.selfEmployed){
-    state.income.push({ id:newId(), year:y, date:`${y}-03-31`, client:'Uber payout Q1', amount:6200, gst:0 }, { id:newId(), year:y, date:`${y}-06-30`, client:'Uber payout Q2', amount:7100, gst:0 });
+    state.income.push({ id:newId(), year:y, date:`${y}-03-31`, type:'self', client:'Uber payout Q1', amount:6200, tax:0, gst:0 }, { id:newId(), year:y, date:`${y}-06-30`, type:'self', client:'Uber payout Q2', amount:7100, tax:0, gst:0 });
     state.mileage.push({ id:newId(), year:y, date:`${y}-04-02`, km:182, purpose:'Rideshare shift' });
     if (!state.totalKm[y]) state.totalKm[y] = '16000';
   }
@@ -649,12 +935,15 @@ async function doExport(){
       ['TFSA', R.tf.set ? R.tf.limit : 'not entered', R.tf.used, R.tf.wd, R.tf.set ? R.tf.left : ''],
       ['FHSA', R.fh.open ? R.fh.limit : 'no FHSA', R.fh.open ? R.fh.used : '', '', R.fh.open ? R.fh.left : '']])
       .concat([[],['Account','Type','Date','Amount']]).concat(state.room.contribs.filter(x => x.year === y).map(x => [x.acct.toUpperCase(), x.type, x.date, x.amount]))));
+    const yi = state.income.filter(x => x.year === y).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    if (yi.length) zip.file(`${root}/Income.csv`, csv([['Date','Type','From','Amount','Tax deducted','GST/HST collected']].concat(yi.map(x => [x.date, INCOME_LABEL[x.type] || x.type, x.client, num(x.amount).toFixed(2), num(x.tax) ? num(x.tax).toFixed(2) : '', num(x.gst) ? num(x.gst).toFixed(2) : '']))));
+    const incBy = {}; yi.forEach(x => incBy[x.type] = (incBy[x.type] || 0) + num(x.amount));
+    const incHtml = yi.length ? `<h2>Income</h2><table>${INCOME_TYPES.filter(t => incBy[t[0]]).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${money(incBy[k])}</td></tr>`).join('')}<tr><td>Tax already deducted</td><td>${money(sum(yi.map(x => x.tax)))}</td></tr></table>` : '';
     let bizHtml = '';
     if (state.profile.selfEmployed){
       const B = biz();
-      zip.file(`${root}/Business_income.csv`, csv([['Date','Client / source','Amount','GST/HST collected']].concat(B.inc.map(x => [x.date, x.client, x.amount, x.gst]))));
       zip.file(`${root}/Mileage_log.csv`, csv([['Date','Purpose','Business km']].concat(B.mil.map(x => [x.date, x.purpose, x.km])).concat([[],['Total km driven in year', B.totalKm || 'not entered'],['Business km', B.bizKm]])));
-      bizHtml = `<h2>Business (T2125)</h2><table><tr><td>Income logged</td><td>${money(B.income)}</td></tr><tr><td>GST/HST collected</td><td>${money(B.gst)}</td></tr><tr><td>Business km / total km</td><td>${B.bizKm} / ${B.totalKm || '?'}</td></tr></table>`;
+      bizHtml = `<h2>Business (T2125)</h2><table><tr><td>Self-employed income</td><td>${money(B.income)}</td></tr><tr><td>GST/HST collected</td><td>${money(B.gst)}</td></tr><tr><td>Business km / total km</td><td>${B.bizKm} / ${B.totalKm || '?'}</td></tr></table>`;
     }
     const byCat = {}; rs.forEach(r => byCat[r.category] = (byCat[r.category] || 0) + num(r.amount));
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${root} summary</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:30px auto;color:#222}table{border-collapse:collapse;width:100%;margin-bottom:20px}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left}td:last-child{text-align:right}h1{color:#0f6b52}</style></head><body>
@@ -662,7 +951,7 @@ async function doExport(){
       <h2>Receipts by category</h2><table>${Object.entries(byCat).map(([c, a]) => `<tr><td>${esc(catLabel(c))}</td><td>${money(a)}</td></tr>`).join('')}<tr><th>Total (${rs.length} receipts)</th><th style="text-align:right">${money(sum(rs.map(r => r.amount)))}</th></tr></table>
       <h2>Documents</h2><table>${docs.map(d => `<tr><td>${esc(d.label)}</td><td>${state.docsDone[d.key] ? '✓ gathered' : 'missing'}</td></tr>`).join('') || '<tr><td>Checklist not answered</td><td></td></tr>'}</table>
       <h2>Registered accounts</h2><table><tr><td>RRSP contributed / limit</td><td>${money(R.rr.used)} / ${R.rr.set ? money(R.rr.limit) : '?'}</td></tr><tr><td>TFSA contributed / room</td><td>${money(R.tf.used)} / ${R.tf.set ? money(R.tf.limit) : '?'}</td></tr>${R.fh.open ? `<tr><td>FHSA contributed / room</td><td>${money(R.fh.used)} / ${money(R.fh.limit)}</td></tr>` : ''}</table>
-      ${bizHtml}<p style="color:#888;font-size:12px">Organized records only. Not tax advice.</p></body></html>`;
+      ${incHtml}${bizHtml}<p style="color:#888;font-size:12px">Organized records only. Not tax advice.</p></body></html>`;
     zip.file(`${root}/Summary_for_preparer.html`, html);
     const blob = await zip.generateAsync({ type:'blob' });
     closeSheet();
@@ -678,7 +967,8 @@ async function doExport(){
 
 /* ---------------- events ---------------- */
 document.addEventListener('click', async e => {
-  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip]');
+  if (e.target.closest('label') && e.target.closest('label').querySelector('input[type=file]')) pauseLockFor();
+  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome]');
   if (e.target.id === 'modal') { closeSheet(); return; }
   if (!t) return;
   const d = t.dataset;
@@ -689,6 +979,7 @@ document.addEventListener('click', async e => {
   if (d.mode){ switchMode(d.mode); return; }
   if (d.delreceipt){ const id = d.delreceipt; confirmSheet('Delete this receipt?', 'The receipt and its photo will be removed.', 'Delete', async () => { await store.deleteFile(id).catch(() => {}); await store.deleteReceipt(id).catch(() => {}); receipts = receipts.filter(x => x.id !== id); render(); toast('Deleted'); }); return; }
   if (d.delcontrib){ state.room.contribs = state.room.contribs.filter(x => x.id !== d.delcontrib); persist(); render(); return; }
+  if (d.editincome){ const x = state.income.find(i => i.id === d.editincome); if (x) incomeForm(x); return; }
   if (d.delincome){ state.income = state.income.filter(x => x.id !== d.delincome); persist(); render(); return; }
   if (d.deltrip){ state.mileage = state.mileage.filter(x => x.id !== d.deltrip); persist(); render(); return; }
   switch (d.act){
@@ -702,10 +993,11 @@ document.addEventListener('click', async e => {
         { id:'type', label:'Type', type:'select', opts:[['contrib','Contribution'],['withdraw','Withdrawal (TFSA)']] },
         { id:'date', label:'Date', type:'date', value:today() }, { id:'amount', label:'Amount ($)', type:'number', ph:'0.00' }],
       v => { if (!num(v.amount)){ toast('Enter an amount'); return false; } state.room.contribs.push({ id:newId(), year:Y(), acct:v.acct, type:v.type, date:v.date, amount:num(v.amount) }); }); break;
-    case 'addIncome': simpleForm('Add income', [
-        { id:'client', label:'Client or source', ph:'e.g. Uber, client name' }, { id:'date', label:'Date received', type:'date', value:today() },
-        { id:'amount', label:'Amount ($, before GST/HST)', type:'number', ph:'0.00' }, { id:'gst', label:'GST/HST collected ($)', type:'number', ph:'0.00' }],
-      v => { if (!num(v.amount)){ toast('Enter an amount'); return false; } state.income.push({ id:newId(), year:Y(), date:v.date, client:v.client, amount:num(v.amount), gst:num(v.gst) }); }); break;
+    case 'addIncome': incomeForm(null); break;
+    case 'incomeAll': incomeShowAll = true; render(); break;
+    case 'lockNow': if (window.TaxKeepLock) TaxKeepLock.lockNow(); break;
+    case 'testRem': if (!window.TaxKeepReminders || !TaxKeepReminders.available()){ toast('Reminders work in the installed Android app.'); break; }
+      TaxKeepReminders.test().then(r => toast(r.ok ? 'A test reminder will pop up in 5 seconds.' : 'Notifications are blocked. Turn them on in Settings → Apps → TaxKeep.')); break;
     case 'addTrip': simpleForm('Log a business trip', [
         { id:'date', label:'Date', type:'date', value:today() }, { id:'purpose', label:'Purpose / destination', ph:'e.g. Client site, deliveries' },
         { id:'km', label:'Kilometres', type:'number', ph:'0' }],
@@ -720,7 +1012,16 @@ document.addEventListener('change', e => {
   else if (t.hasAttribute('data-fhsa')){ state.room.fhsaOpen = t.checked; persist(); render(); }
   else if (t.hasAttribute('data-totalkm')){ state.totalKm[Y()] = t.value; persist(); render(); }
   else if (d.prof){ state.profile[d.prof] = t.value; persist(); render(); }
-  else if (t.hasAttribute('data-se')){ state.profile.selfEmployed = t.checked; persist(); render(); }
+  else if (t.hasAttribute('data-se')){ state.profile.selfEmployed = t.checked; persist(); render(); if (state.reminders.on) syncReminders(); }
+  else if (t.id === 'csvIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) importCSV(f); t.value = ''; }
+  else if (d.wait){ state.waitlist[d.wait] = t.checked; persist(); }
+  else if (d.rem){ if (!state.reminders.on){ state.reminders = { on:true, deadlines:false, instalments:false, monthly:false }; } state.reminders[d.rem] = t.checked; persist(); syncReminders().then(render); render(); }
+  else if (t.hasAttribute('data-lock')){
+    if (!window.TaxKeepLock) return;
+    if (t.checked) TaxKeepLock.setupPin().then(ok => { toast(ok ? 'PIN lock is on' : 'PIN not set'); render(); });
+    else TaxKeepLock.verify().then(ok => { if (ok){ TaxKeepLock.turnOff(); toast('Lock turned off'); } render(); });
+  }
+  else if (t.hasAttribute('data-bio')){ TaxKeepLock.setBio(t.checked).then(ok => { if (!ok && t.checked) toast('No fingerprint is set up on this phone.'); render(); }); }
   else if (d.act === 'pct'){ state.setAsidePct = Number(t.value); persist(); render(); }
 });
 document.addEventListener('input', e => { if (e.target.dataset.act === 'pct'){ const b = e.target.nextElementSibling; if (b) b.textContent = e.target.value + '%'; } });
@@ -730,7 +1031,11 @@ document.addEventListener('input', e => { if (e.target.dataset.act === 'pct'){ c
   let pref = 'device'; try { pref = localStorage.getItem('taxkeep_mode') || 'device'; } catch(e){}
   if (pref === 'cloud'){ const c = await makeCloudStore().catch(() => null); if (c){ store = c; cloudOK = true; } }
   if (!store) store = await makeDeviceStore();
-  await loadAll(); render();
+  try { if (window.TaxKeepLock) TaxKeepLock.init(); } catch(e){}
+  await loadAll();
+  if (!state.onboarded && (receipts.length || state.income.length || Object.keys(state.answers).length)){ state.onboarded = true; persist(); }
+  render();
+  if (!state.onboarded) showOnboarding(); else if (state.reminders.on) syncReminders();
   capUse('downloads').then(x => { dl = x; if (tab === 'more') render(); });
   if (cloudOK === null) makeCloudStore().then(c => { cloudOK = !!c; if (tab === 'more') render(); }).catch(() => { cloudOK = false; });
 })();
