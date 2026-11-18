@@ -118,5 +118,13 @@
     const { data } = await w.recognize(canvas);
     return parseReceipt(data.text || '', selfEmployed);
   }
-  window.TaxKeepOCR = { readReceipt, parseReceipt, warmUp: () => getWorker().catch(() => null) };
+  async function readText(dataUrl){
+    if (!window.Tesseract) throw new Error('Reader not loaded');
+    const [w, canvas] = await Promise.all([getWorker(), prepare(dataUrl)]);
+    // Slips are grids of boxes: sparse-text mode finds the numbers inside them.
+    await w.setParameters({ tessedit_pageseg_mode: '11' });
+    try { const { data } = await w.recognize(canvas); return data.text || ''; }
+    finally { await w.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {}); }
+  }
+  window.TaxKeepOCR = { readReceipt, parseReceipt, readText, warmUp: () => getWorker().catch(() => null) };
 })();

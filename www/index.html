@@ -9,6 +9,9 @@
 <script src="ocr.js"></script>
 <script src="lock.js"></script>
 <script src="reminders.js"></script>
+<script src="jspdf.umd.min.js"></script>
+<script src="jspdf.plugin.autotable.min.js"></script>
+<script src="forms.js"></script>
 <script>
 /* App shim: TaxKeep's export asks for a "downloads" capability. In the Android app,
    that is provided by saving the ZIP to the app's cache and opening Android's share sheet. */
@@ -126,7 +129,7 @@ table.t td:last-child{text-align:right;font-weight:600}
 /* ---- polish ---- */
 .card{box-shadow:0 1px 2px rgba(16,40,32,.05)}
 header{padding-top:max(16px,env(safe-area-inset-top))}
-.qa{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.qa{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .qa button{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:12px 6px;display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:600;font-size:13px;cursor:pointer;color:var(--ink)}
 .qa svg{width:24px;height:24px;color:var(--brand)}
 .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:var(--brand2);color:var(--brand);white-space:nowrap}
@@ -166,6 +169,12 @@ header{padding-top:max(16px,env(safe-area-inset-top))}
 .ob-dots{display:flex;gap:6px;justify-content:center;margin:auto 0 16px;padding-top:16px}
 .ob-dots i{width:8px;height:8px;border-radius:99px;background:var(--line)}
 .ob-dots i.on{width:22px;background:var(--brand)}
+.ws h3{margin-bottom:2px}.ws .form{font-size:12px;color:var(--muted);margin-bottom:8px}
+.wt{width:100%;border-collapse:collapse;font-size:13px}.wt td{padding:7px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+.wt td.ln{color:var(--brand);font-weight:700;white-space:nowrap;width:1%;padding-right:8px}.wt td.am{text-align:right;white-space:nowrap;font-weight:600}
+.wt tr.strong td{font-weight:700;border-top:2px solid var(--line)}.wt .src{display:block;color:var(--muted);font-size:11.5px}
+.slipbox{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.slipbox label.f{font-size:12px}
+.tag{display:inline-block;background:var(--brand2);color:var(--brand);font-weight:700;border-radius:7px;padding:2px 7px;font-size:12px;margin-right:6px}
 </style>
 </head>
 <body>
@@ -321,8 +330,9 @@ function defaultState(){
   return { v:1, profile:{ name:'', year:new Date().getFullYear(), selfEmployed:false, province:'MB' },
     answers:{}, docsDone:{}, room:{ rrspLimit:'', tfsaRoom:'', fhsaOpen:false, fhsaCarry:'', fhsaPrior:'', contribs:[] },
     income:[], mileage:[], totalKm:{}, setAsidePct:25, lastExport:0,
-    reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{} };
+    reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{}, slips:[] };
 }
+let formsSeg = 'slips';
 let store, state = defaultState(), receipts = [], tab = 'home', filter = 'all', dl = null, cloudOK = null, incomeShowAll = false, remStatus = '';
 let saveChain = Promise.resolve(), saveT;
 function persist(){
@@ -333,6 +343,7 @@ function mergeState(s){
   const d = defaultState(); if (!s) return d;
   const m = {...d, ...s, profile:{...d.profile, ...(s.profile||{})}, room:{...d.room, ...(s.room||{})}, reminders:{...d.reminders, ...(s.reminders||{})}, waitlist:{...(s.waitlist||{})}};
   m.income = (m.income || []).map(x => x.type ? x : {...x, type:'self'});
+  m.slips = Array.isArray(m.slips) ? m.slips : [];
   return m;
 }
 async function loadAll(){
@@ -342,6 +353,7 @@ async function loadAll(){
 }
 const Y = () => Number(state.profile.year);
 const yearReceipts = () => receipts.filter(r => (r.date || '').startsWith(String(Y())));
+const yearSlips = () => state.slips.filter(s => Number(s.year) === Y());
 const reqDocs = () => { const out = []; QUESTIONS.forEach(q => { if (state.answers[q.id] === 'yes') q.docs.forEach((d, i) => out.push({ key:q.id + ':' + i, label:d, q })); }); return out; };
 
 /* ---------------- calculations ---------------- */
@@ -400,7 +412,7 @@ const ICONS = {
   income:'<path d="M12 3v18M16.5 7H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H7"/>',
   more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>' };
 function renderTabs(){
-  const list = [['home','Home'],['receipts','Receipts'],['income','Income'],['checklist','Checklist'],['accounts','Savings'],['more','More']];
+  const list = [['home','Home'],['receipts','Receipts'],['income','Income'],['checklist','Forms'],['accounts','Savings'],['more','More']];
   if (tab === 'business') tab = 'income';
   if (!list.some(t => t[0] === tab)) tab = 'home';
   $('#tabs').innerHTML = list.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>${l}</button>`).join('');
@@ -409,8 +421,8 @@ function render(){
   $('#modeBadge').textContent = store ? (store.kind === 'cloud' ? '☁ Cloud vault' : store.kind === 'device' ? '🔒 On this device' : '⚠ Not saved') : 'Loading…';
   renderTabs();
   const v = $('#view');
-  v.innerHTML = ({ home:vHome, receipts:vReceipts, income:vIncome, checklist:vChecklist, accounts:vAccounts, business:vIncome, more:vMore }[tab] || vHome)();
-  if (tab === 'receipts') loadThumbs();
+  v.innerHTML = ({ home:vHome, receipts:vReceipts, income:vIncome, checklist:vForms, accounts:vAccounts, business:vIncome, more:vMore }[tab] || vHome)();
+  if (tab === 'receipts' || (tab === 'checklist' && formsSeg === 'slips')) loadThumbs();
 }
 function yearPicker(){
   const y = new Date().getFullYear(), ys = [y - 2, y - 1, y];
@@ -427,14 +439,15 @@ function vHome(){
   <div class="qa">
     <button data-act="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Snap receipt</button>
     <button data-act="addIncome"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS.income}</svg>Add income</button>
+    <button data-act="addSlip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h3M13 12h3M8 16h3M13 16h3"/></svg>Add slip</button>
     <button data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export</button>
   </div>
   ${!receipts.length && !state.income.length && !Object.keys(state.answers).length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, log your income, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
   <div class="grid2">
     <div class="card stat"><div class="n">${money(sum(rs.map(r => r.amount)))}</div><div class="l">${rs.length} receipt${rs.length === 1 ? '' : 's'} in ${Y()}</div></div>
+    <div class="card stat"><div class="n">${yearSlips().length}</div><div class="l">tax slip${yearSlips().length === 1 ? '' : 's'} on file</div></div>
     <div class="card stat"><div class="n">${money(sum(state.income.filter(x => x.year === Y()).map(x => x.amount)))}</div><div class="l">income logged</div></div>
     <div class="card stat"><div class="n">${docs.length ? done + '/' + docs.length : '–'}</div><div class="l">documents gathered</div></div>
-    <div class="card stat"><div class="n">${R.rr.set ? money(R.rr.left) : '–'}</div><div class="l">RRSP room left</div></div>
   </div>
   ${al.length ? `<div class="card"><h3>Heads up</h3>${al.map(([k, t, go]) => `<div class="alert ${k}" data-tab="${go}" style="cursor:pointer">${esc(t)}</div>`).join('')}</div>` : `<div class="alert ok">You're all caught up for ${Y()}.</div>`}
   ${top.length ? `<div class="card"><h3>Where your receipts are</h3><table class="t">${top.map(([c, a]) => `<tr><td>${esc(catLabel(c))}</td><td>${money(a)}</td></tr>`).join('')}</table></div>` : ''}
@@ -462,10 +475,52 @@ async function loadThumbs(){
     if (f && f.dataUrl && el.isConnected){ const im = document.createElement('img'); im.className = 'thumb'; im.src = f.dataUrl; im.alt = ''; el.replaceWith(im); }
   }
 }
+function vForms(){
+  const seg = `<div class="seg" style="margin-bottom:12px">${[['slips','Slips'],['work','Worksheets'],['list','Checklist']].map(([k, l]) => `<button data-seg="${k}" class="${formsSeg === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  return `<div class="row between"><h2>Tax forms</h2>${yearPicker()}</div>${seg}` + (formsSeg === 'work' ? vWorksheets() : formsSeg === 'list' ? vChecklist() : vSlips());
+}
+function slipKey(s){ const F = TaxKeepForms, d = F.SLIP_TYPES[s.type] || F.SLIP_TYPES.OTHER, b = d.boxes.find(x => x[3] !== 'count' && x[3] !== 'info') || d.boxes[0]; return { code:b[0], label:b[1], amt:num((s.boxes || {})[b[0]]) }; }
+function vSlips(){
+  const F = window.TaxKeepForms, ys = yearSlips().sort((a, b) => (a.type + a.issuer).localeCompare(b.type + b.issuer));
+  const docs = reqDocs(), wanted = docs.filter(d => F.DOC_SLIPS[d.key] && !state.docsDone[d.key]);
+  return `
+  ${wanted.length ? `<div class="alert info">Still to add: ${wanted.map(d => esc(d.label)).join(', ')}.</div>` : ''}
+  <div class="card list">${ys.length ? ys.map(s => { const k = slipKey(s); return `
+    <div class="item" data-slip="${s.id}"><div class="thumb" data-thumb="${s.hasFile && /^image/.test(s.fileType || '') ? 'slip_' + s.id : ''}">${s.hasFile ? '' : esc(F.short(s.type))}</div>
+    <div class="grow"><div class="ell"><span class="tag">${esc(F.short(s.type))}</span><b>${esc(s.issuer || s.label || 'Slip')}</b></div><div class="small muted ell">Box ${esc(k.code === 'amt' ? '–' : k.code)} · ${esc(k.label)}</div></div>
+    <div class="amt">${money(k.amt)}</div></div>`; }).join('') : `<div class="empty">No slips for ${Y()} yet.<br>Snap your T4, T5, T2202 or RRSP receipts as they arrive (usually by the end of February).</div>`}
+  </div>
+  <button class="btn fab" data-act="addSlip">+ Add slip</button>
+  <p class="disc">TaxKeep reads the main boxes from a photo. Always check each number against the slip.</p>`;
+}
+function vWorksheets(){
+  const secs = worksheetSections(), shown = secs.filter(s => !s.empty);
+  const row = r => `<tr class="${r.strong ? 'strong' : ''}"><td class="ln">${esc(r.line)}</td><td>${esc(r.label)}${r.src ? `<span class="src">${esc(r.src)}</span>` : ''}</td><td class="am">${money(r.amount)}</td></tr>`;
+  return `
+  <div class="card"><h3>Worksheets for your preparer</h3><p class="small muted">Your slips, receipts and income, sorted by the line they go on. Your preparer can work straight from this.</p>
+    <button class="btn block" data-act="wsPdf" ${dl ? '' : 'disabled'}>Save or send ${Y()} worksheets (PDF)</button></div>
+  ${shown.length ? shown.map(s => `<div class="card ws"><h3>${esc(s.title)}</h3><div class="form">${esc(s.form)}</div>
+    ${s.rows && s.rows.length ? `<table class="wt">${s.rows.map(row).join('')}</table>` : ''}
+    ${s.rows2 && s.rows2.length ? `<p class="small" style="margin:10px 0 2px"><b>${esc(s.rows2Title)}</b></p><table class="wt">${s.rows2.map(row).join('')}</table>` : ''}
+    ${s.detail ? `<table class="wt">${s.detail.rows.map(r => `<tr>${r.map((c, i) => `<td class="${i === r.length - 1 ? 'am' : ''}">${typeof c === 'number' ? money(c) : esc(c)}</td>`).join('')}</tr>`).join('')}</table>` : ''}
+    ${s.total != null ? `<p class="row between" style="margin:8px 0 0"><b>Total</b><b>${money(s.total)}</b></p>` : ''}
+    ${(s.notes || []).map(n => `<p class="small muted" style="margin:6px 0 0">${esc(n)}</p>`).join('')}</div>`).join('')
+    : `<div class="empty">Add slips, receipts or income for ${Y()} and your worksheets fill in here.</div>`}
+  <p class="disc">Organized from your own records, laid out by CRA line numbers. Not a tax return and not tax advice.</p>`;
+}
+function worksheetSections(){
+  return TaxKeepForms.build({ year:Y(), slips:state.slips, receipts, income:state.income, contribs:state.room.contribs, selfEmployed:state.profile.selfEmployed,
+    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel });
+}
+function worksheetPdf(){ return TaxKeepForms.pdf(worksheetSections(), { year:Y(), name:state.profile.name, province:state.profile.province, date:today() }); }
+async function saveWorksheets(){
+  if (!dl){ toast('Saving isn\'t available on this device.'); return; }
+  try { const blob = worksheetPdf(); await dl.save({ filename:`TaxKeep_${Y()}_worksheets.pdf`, data:blob }); toast('Worksheets ready'); }
+  catch(e){ toast(e && e.code === 'declined' ? 'Cancelled' : 'Could not make the PDF: ' + (e && (e.message || e.code) || 'error')); }
+}
 function vChecklist(){
   const docs = reqDocs(), answered = QUESTIONS.filter(q => state.answers[q.id]).length;
   return `
-  <div class="row between"><h2>Checklist</h2>${yearPicker()}</div>
   <div class="card"><h3>Documents you'll need for ${Y()}</h3>
     ${docs.length ? docs.map(d => `<label class="doc ${state.docsDone[d.key] ? 'done' : ''}"><input type="checkbox" data-doc="${d.key}" ${state.docsDone[d.key] ? 'checked' : ''}><span>${esc(d.label)}</span></label>`).join('') : '<p class="muted small">Answer the questions below and your list builds itself.</p>'}
   </div>
@@ -515,6 +570,7 @@ function vIncome(){
     <div class="card stat"><div class="n">${money(sum(yi.map(x => x.amount)))}</div><div class="l">total income ${Y()}</div></div>
     <div class="card stat"><div class="n">${money(sum(yi.map(x => x.tax)))}</div><div class="l">tax already deducted</div></div>
   </div>
+  ${yearSlips().length ? `<div class="card" data-tab="checklist" style="cursor:pointer"><div class="row between"><h3>From your slips</h3><span class="small muted">${yearSlips().length} slip${yearSlips().length === 1 ? '' : 's'} →</span></div><p class="small muted" style="margin:0">See the Worksheets in Tax forms for slip totals by line. Don't also log a slip's totals here, or they'll count twice.</p></div>` : ''}
   ${Object.keys(byType).length ? `<div class="card"><h3>By type</h3><table class="t">${INCOME_TYPES.filter(t => byType[t[0]]).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${money(byType[k])}</td></tr>`).join('')}</table></div>` : ''}
   <div class="card"><div class="row between"><h3>Income entries</h3><button class="btn sec" data-act="addIncome">+ Add</button></div>
     <div class="list">${show.length ? show.map(x => `<div class="item" data-editincome="${x.id}"><div class="grow"><div class="ell"><b>${esc(x.client || INCOME_LABEL[x.type] || 'Income')}</b></div><div class="small muted ell">${esc(x.date)} · ${esc(INCOME_LABEL[x.type] || 'Income')}${num(x.tax) ? ' · tax ' + money(x.tax) : ''}${num(x.gst) ? ' · GST/HST ' + money(x.gst) : ''}</div></div><div class="amt">${money(x.amount)}</div></div>`).join('') : '<div class="empty small">Add pay from your job, gig apps, EI, interest or anything else you earned.</div>'}</div>
@@ -558,7 +614,7 @@ function vMore(){
   return `
   <h2>More</h2>
   <div class="card"><h3>Your tax package</h3>
-    <p class="small muted">One ZIP with every receipt file sorted by category, plus summaries for your preparer: receipts, checklist, RRSP/TFSA/FHSA and business. You can save it to Drive or Files, or send it by email.</p>
+    <p class="small muted">One ZIP with every receipt and slip photo, the tax worksheets (PDF), and summaries for your preparer: receipts, slips, checklist, RRSP/TFSA/FHSA and business. You can save it to Drive or Files, or send it by email.</p>
     <div class="row" style="margin-bottom:8px">${yearPicker()}</div>
     <button class="btn block" data-act="export" ${dl ? '' : 'disabled'}>Save or send ${Y()} package (.zip)</button>
     ${dl ? '' : '<p class="small muted" style="margin-top:6px">Export isn\'t available on this device.</p>'}
@@ -658,6 +714,12 @@ function autoFill(dataUrl){
     box.textContent = got.length ? `✓ Filled in the ${got.join(', ')} from your photo. Please check them.` : 'Couldn\'t read this receipt clearly. Please fill it in.';
   }).catch(() => { if (box.isConnected){ box.className = 'scan warn'; box.textContent = 'Couldn\'t read this receipt. Please fill it in.'; } });
 }
+async function openSlip(id){
+  const x = state.slips.find(s => s.id === id); if (!x) return;
+  slipForm(x);
+  if (x.hasFile){ const f = await store.getFile('slip_' + id).catch(() => null);
+    if (f && $('#sPrev')) $('#sPrev').innerHTML = /^image/.test(f.type) ? `<img class="preview" src="${f.dataUrl}" alt="Slip">` : `<div class="alert info">📄 ${esc(f.name)} is saved and will be in your export.</div>`; }
+}
 async function openReceipt(id){
   const r = receipts.find(x => x.id === id); if (!r) return;
   receiptForm(r);
@@ -670,6 +732,80 @@ function simpleForm(title, fields, onSave){
   openSheet(`<h3>${esc(title)}</h3>${fields.map(f => f.html || `<label class="f">${esc(f.label)}</label>${f.type === 'select' ? `<select id="sf_${f.id}">${f.opts.map(o => `<option value="${o[0]}">${esc(o[1])}</option>`).join('')}</select>` : `<input id="sf_${f.id}" type="${f.type || 'text'}" ${f.type === 'number' ? 'inputmode="decimal" step="0.01"' : ''} value="${esc(f.value || '')}" placeholder="${esc(f.ph || '')}">`}`).join('')}
     <div class="row" style="margin-top:14px"><button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="sfSave">Save</button></div>`);
   $('#sfSave').onclick = () => { const v = {}; fields.forEach(f => { if (f.id) v[f.id] = $('#sf_' + f.id).value; }); if (onSave(v) !== false){ closeSheet(); persist(); render(); } };
+}
+
+/* ---------------- tax slips ---------------- */
+let pendingSlipFile = null;
+function slipForm(x){
+  pendingSlipFile = null;
+  const F = TaxKeepForms, type0 = x ? x.type : 'T4';
+  openSheet(`<h3>${x ? 'Edit slip' : 'Add a tax slip'}</h3>
+    ${x ? '' : `<label class="drop" id="sDrop"><input type="file" id="sFile" accept="image/*,application/pdf" hidden><div id="sDropTxt">📷 Snap or upload the slip. TaxKeep reads the main boxes.</div></label>`}
+    <div id="sPrev"></div>
+    <label class="f">Slip type</label><select id="sType">${F.SLIP_ORDER.map(k => `<option value="${k}" ${k === type0 ? 'selected' : ''}>${esc(F.SLIP_TYPES[k].name)}</option>`).join('')}</select>
+    <div class="grid2"><div><label class="f" id="sIssLbl">Issued by</label><input type="text" id="sIss" value="${esc(x ? x.issuer : '')}" placeholder="Employer, bank, school…"></div>
+    <div><label class="f">Tax year</label><input type="number" id="sYear" value="${esc(x ? x.year : Y())}"></div></div>
+    <div id="sBoxes"></div>
+    <div class="row" style="margin-top:14px">${x ? '<button class="btn danger" id="sDel">Delete</button>' : ''}<button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="sSave">Save</button></div>`);
+  const vals = { ...(x ? x.boxes : {}) };
+  const drawBoxes = () => {
+    $('#sBoxes').querySelectorAll('input[data-box]').forEach(i => { vals[i.dataset.box] = i.value; });
+    const d = F.SLIP_TYPES[$('#sType').value];
+    $('#sBoxes').innerHTML = `${d.hasLabel ? `<label class="f">What is it?</label><input type="text" id="sLabel" value="${esc(x ? x.label || '' : '')}" placeholder="e.g. T5008, T4RIF, RL-1">` : ''}
+      <div class="slipbox">${d.boxes.map(([code, label, line, kind]) => `<div><label class="f">${code === 'amt' || code === 'tax' ? '' : 'Box ' + esc(code) + ' · '}${esc(label)}${line && kind !== 'info' && kind !== 'count' ? ` <span class="small muted">(${/^\d/.test(line) ? 'line ' : ''}${esc(line)})</span>` : ''}</label>
+        <input type="number" inputmode="decimal" step="${kind === 'count' ? '1' : '0.01'}" data-box="${code}" value="${esc(vals[code] ?? '')}" placeholder="${kind === 'count' ? '0' : '0.00'}"></div>`).join('')}</div>`;
+  };
+  $('#sType').onchange = drawBoxes; drawBoxes();
+  const fi = $('#sFile');
+  if (fi) fi.onchange = async () => {
+    const file = fi.files[0]; if (!file) return;
+    $('#sDropTxt').textContent = 'Reading…';
+    try {
+      const f = { name:file.name, type:file.type || 'application/octet-stream', dataUrl:await readFile(file) };
+      const fit = await fitFor(store.kind, f);
+      if (!fit){ $('#sDropTxt').textContent = 'That file is too large.'; return; }
+      pendingSlipFile = fit; $('#sDrop').classList.add('has'); $('#sDropTxt').textContent = '✓ ' + file.name;
+      $('#sPrev').innerHTML = /^image/.test(fit.type) ? `<img class="preview" src="${fit.dataUrl}" alt="Slip preview">` : '';
+      if (/^image\/(jpeg|png|webp|gif|bmp)/.test(fit.type) && window.TaxKeepOCR && TaxKeepOCR.readText) readSlipPhoto(fit.dataUrl);
+    } catch(e){ $('#sDropTxt').textContent = 'Could not read that file.'; }
+    window.__tkPauseLock = false;
+  };
+  if (!x && window.TaxKeepOCR) TaxKeepOCR.warmUp();
+  if (x) $('#sDel').onclick = () => confirmSheet('Delete this slip?', 'The slip and its photo will be removed.', 'Delete', async () => {
+    await store.deleteFile('slip_' + x.id).catch(() => {}); state.slips = state.slips.filter(s => s.id !== x.id); persist(); render(); toast('Deleted'); });
+  $('#sSave').onclick = async () => {
+    const boxes = {}; $('#sBoxes').querySelectorAll('input[data-box]').forEach(i => { if (i.value !== '') boxes[i.dataset.box] = num(i.value); });
+    if (!Object.values(boxes).some(v => v)){ toast('Enter at least one box'); return; }
+    const t = $('#sType').value, yr = Number($('#sYear').value) || Y();
+    const m = { ...(x || {}), id: x ? x.id : newId(), type:t, year:yr, issuer:$('#sIss').value.trim(), boxes, label: $('#sLabel') ? $('#sLabel').value.trim() : '' };
+    $('#sSave').disabled = true;
+    try {
+      if (pendingSlipFile){ await store.putFile('slip_' + m.id, pendingSlipFile); m.hasFile = true; m.fileType = pendingSlipFile.type; m.fileName = pendingSlipFile.name; }
+      state.slips = state.slips.filter(s => s.id !== m.id).concat(m);
+      // Tick the matching checklist documents and answer the question.
+      let ticked = 0;
+      Object.entries(TaxKeepForms.DOC_SLIPS).forEach(([key, types]) => { if (!types.includes(t)) return; const q = key.split(':')[0];
+        if (!state.answers[q]) state.answers[q] = 'yes'; if (state.answers[q] === 'yes' && !state.docsDone[key]){ state.docsDone[key] = true; ticked++; } });
+      if (yr !== Y()) state.profile.year = yr;
+      persist(); closeSheet(); tab = 'checklist'; formsSeg = 'slips'; render();
+      toast(ticked ? 'Saved and ticked off your checklist' : 'Saved');
+    } catch(e){ $('#sSave').disabled = false; toast('Could not save: ' + (e && (e.message || e.code) || 'error')); }
+  };
+}
+function readSlipPhoto(dataUrl){
+  const box = document.createElement('div'); box.className = 'scan'; box.innerHTML = '<span class="spin"></span><span id="ocrMsg">Reading your slip…</span>';
+  $('#sPrev').appendChild(box);
+  window.__ocrProgress = p => { const m = document.getElementById('ocrMsg'); if (m) m.textContent = `Reading your slip… ${Math.round(p * 100)}%`; };
+  TaxKeepOCR.readText(dataUrl).then(text => {
+    if (!box.isConnected) return;
+    const F = TaxKeepForms, guess = F.guessType(text);
+    if (guess && guess !== $('#sType').value){ $('#sType').value = guess; $('#sType').onchange(); }
+    const got = F.parseSlip(text, $('#sType').value); let n = 0;
+    $('#sBoxes').querySelectorAll('input[data-box]').forEach(i => { const v = got[i.dataset.box]; if (v != null && i.value === ''){ i.value = Number.isInteger(v) && i.step === '1' ? v : v.toFixed(2); n++; } });
+    if (got.__year && got.__year <= new Date().getFullYear()) $('#sYear').value = got.__year;
+    box.className = n ? 'scan ok' : 'scan warn';
+    box.textContent = n ? `✓ Read ${n} box${n > 1 ? 'es' : ''}${guess ? ' from your ' + F.short(guess) : ''}. Check every number against the slip.` : `Couldn't read the boxes clearly${guess ? ' (looks like a ' + F.short(guess) + ')' : ''}. Please type them in.`;
+  }).catch(() => { if (box.isConnected){ box.className = 'scan warn'; box.textContent = 'Couldn\'t read this slip. Please type the boxes in.'; } });
 }
 
 /* ---------------- income ---------------- */
@@ -861,8 +997,10 @@ async function switchMode(target){
       }
       await to.putReceipt(mm);
     }
+    for (const sl of state.slips.filter(x => x.hasFile)){ const f = await fitFor(to.kind, await from.getFile('slip_' + sl.id).catch(() => null)); if (f) await to.putFile('slip_' + sl.id, f); else skipped++; }
     if (!skipped){
       for (const m of receipts){ if (m.hasFile) await from.deleteFile(m.id).catch(() => {}); await from.deleteReceipt(m.id).catch(() => {}); }
+      for (const sl of state.slips) await from.deleteFile('slip_' + sl.id).catch(() => {});
       await from.saveState(defaultState()).catch(() => {});
     }
     store = to;
@@ -893,7 +1031,9 @@ async function addDemo(){
   if (state.room.rrspLimit === '') state.room.rrspLimit = '9500';
   if (state.room.tfsaRoom === '') state.room.tfsaRoom = '14000';
   state.room.contribs.push({ id:newId(), year:y, acct:'rrsp', type:'contrib', date:`${y}-02-20`, amount:4000 }, { id:newId(), year:y, acct:'tfsa', type:'contrib', date:`${y}-01-10`, amount:6000 });
-  state.income.push({ id:newId(), year:y, date:`${y}-06-30`, type:'employment', client:'Sample employer (T4, Jan–Jun)', amount:21400, tax:3150, gst:0 });
+  state.slips.push({ id:newId(), type:'T4', year:y, issuer:'Sample employer', boxes:{ '14':42800, '16':2410.65, '18':698.84, '22':6300, '44':520 } },
+    { id:newId(), type:'T5', year:y, issuer:'Sample bank', boxes:{ '13':128.4 } });
+  Object.assign(state.docsDone, { 'employed:0':true });
   if (state.profile.selfEmployed){
     state.income.push({ id:newId(), year:y, date:`${y}-03-31`, type:'self', client:'Uber payout Q1', amount:6200, tax:0, gst:0 }, { id:newId(), year:y, date:`${y}-06-30`, type:'self', client:'Uber payout Q2', amount:7100, tax:0, gst:0 });
     state.mileage.push({ id:newId(), year:y, date:`${y}-04-02`, km:182, purpose:'Rideshare shift' });
@@ -903,6 +1043,7 @@ async function addDemo(){
 }
 async function wipe(){
   for (const m of receipts){ if (m.hasFile) await store.deleteFile(m.id).catch(() => {}); await store.deleteReceipt(m.id).catch(() => {}); }
+  for (const sl of state.slips) await store.deleteFile('slip_' + sl.id).catch(() => {});
   receipts = []; state = defaultState(); await store.saveState(state).catch(() => {}); tab = 'home'; render(); toast('All data deleted');
 }
 function csv(rows){ return rows.map(r => r.map(c => { const s = String(c ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n'); }
@@ -953,6 +1094,19 @@ async function doExport(){
       <h2>Registered accounts</h2><table><tr><td>RRSP contributed / limit</td><td>${money(R.rr.used)} / ${R.rr.set ? money(R.rr.limit) : '?'}</td></tr><tr><td>TFSA contributed / room</td><td>${money(R.tf.used)} / ${R.tf.set ? money(R.tf.limit) : '?'}</td></tr>${R.fh.open ? `<tr><td>FHSA contributed / room</td><td>${money(R.fh.used)} / ${money(R.fh.limit)}</td></tr>` : ''}</table>
       ${incHtml}${bizHtml}<p style="color:#888;font-size:12px">Organized records only. Not tax advice.</p></body></html>`;
     zip.file(`${root}/Summary_for_preparer.html`, html);
+    const ys = yearSlips();
+    if (ys.length){
+      const srows = [['Slip','Issued by','Box','Description','Amount','Photo in this ZIP']];
+      for (const sl of ys){
+        let path = '';
+        if (sl.hasFile){ const f = await store.getFile('slip_' + sl.id).catch(() => null);
+          if (f && f.dataUrl && f.dataUrl.includes(',')){ path = `Slips/${safeName(TaxKeepForms.short(sl.type))}_${safeName(sl.issuer)}_${sl.id.slice(-4)}.${extFor(f)}`; const [h, b] = f.dataUrl.split(','); if (h.includes(';base64')) zip.file(`${root}/${path}`, b, { base64:true }); else zip.file(`${root}/${path}`, decodeURIComponent(b)); } }
+        const def = TaxKeepForms.SLIP_TYPES[sl.type] || TaxKeepForms.SLIP_TYPES.OTHER;
+        def.boxes.forEach(([code, label], i) => { if ((sl.boxes || {})[code] != null) srows.push([TaxKeepForms.short(sl.type) + (sl.label ? ' ' + sl.label : ''), sl.issuer, code === 'amt' || code === 'tax' ? '' : code, label, num(sl.boxes[code]), path]); });
+      }
+      zip.file(`${root}/Slips.csv`, csv(srows));
+    }
+    if (window.jspdf && window.TaxKeepForms){ try { zip.file(`${root}/Worksheets_${y}.pdf`, worksheetPdf()); } catch(e){} }
     const blob = await zip.generateAsync({ type:'blob' });
     closeSheet();
     await dl.save({ filename:`${root}_package.zip`, data:blob });
@@ -968,12 +1122,14 @@ async function doExport(){
 /* ---------------- events ---------------- */
 document.addEventListener('click', async e => {
   if (e.target.closest('label') && e.target.closest('label').querySelector('input[type=file]')) pauseLockFor();
-  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome]');
+  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome],[data-slip],[data-seg]');
   if (e.target.id === 'modal') { closeSheet(); return; }
   if (!t) return;
   const d = t.dataset;
   if (d.tab && t.tagName !== 'SELECT'){ tab = d.tab; filter = 'all'; render(); window.scrollTo(0, 0); return; }
   if (d.filter){ filter = d.filter; render(); return; }
+  if (d.seg){ formsSeg = d.seg; render(); return; }
+  if (d.slip){ openSlip(d.slip); return; }
   if (d.open){ openReceipt(d.open); return; }
   if (d.ans){ state.answers[d.ans] = d.v; if (d.ans === 'self' && d.v === 'yes' && !state.profile.selfEmployed){ state.profile.selfEmployed = true; toast('Business tools turned on'); } persist(); render(); return; }
   if (d.mode){ switchMode(d.mode); return; }
@@ -985,6 +1141,8 @@ document.addEventListener('click', async e => {
   switch (d.act){
     case 'close': closeSheet(); break;
     case 'add': receiptForm(null); break;
+    case 'addSlip': slipForm(null); break;
+    case 'wsPdf': saveWorksheets(); break;
     case 'demo': addDemo(); break;
     case 'export': doExport(); break;
     case 'wipe': confirmSheet('Delete everything?', 'All receipts, files and answers in this storage will be permanently removed.', 'Delete all', wipe); break;

@@ -13,3 +13,7 @@ Every push to `main` builds a new APK automatically. Download the latest one fro
 - `android/app/taxkeep-debug.jks` – debug signing key so updates install over older versions (testing only, not for Google Play)
 
 TaxKeep organizes records; it does not give tax advice. The name is a placeholder.
+
+## Tax forms (v1.2)
+- **Slips**: snap or type T4, T4A, T4E, T5, T3, T2202, RRSP receipts, T4RSP, T4A(P), T4A(OAS), T5007, T4FHSA. TaxKeep reads the main boxes from a photo (`www/ocr.js` readText + `www/forms.js` parseSlip) and ticks off the checklist.
+- **Worksheets**: slips, receipts and income sorted by T1 / T2125 line numbers, with receipt lists for medical, donations, child care, moving, T777 and more. Saved as a PDF (jsPDF, bundled locally) and included in the export ZIP with `Slips.csv` and slip photos.
