@@ -35,3 +35,8 @@ Setup (and More → About you) asks what applies: job with a T4, gig/delivery ap
 - **Spouse / children**: household card, "whose receipt", medical and child care on the right return; childcare category only with children.
 - **Student**: tuition category. **Work from home**: employee home office (T777).
 Checklist answers and these settings stay in sync. Older data is sorted into types automatically.
+
+## v1.5 – simpler navigation
+- Home: one "Next step" card, one + Add button, a short "Your year" list, top 2 alerts.
+- Tabs: Home, Receipts, Income, Tax forms, More. Savings moved under More.
+- More is a menu with sub-pages. Android back button goes back a level.

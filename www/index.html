@@ -177,6 +177,16 @@ header{padding-top:max(16px,env(safe-area-inset-top))}
 .slipbox{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.slipbox label.f{font-size:12px}
 .est{border-radius:18px;padding:18px;color:#fff;background:var(--brand);margin-bottom:12px;cursor:pointer}.est.owe{background:#9a3412}
 .est .big{font-size:30px;font-weight:800;margin:4px 0}.est .sm{opacity:.85;font-size:13px}
+.next{background:var(--brand2);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
+.next .k{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--brand)}
+.next h3{margin:4px 0 4px;font-size:19px}.next p{margin:0 0 12px;color:var(--muted);font-size:14px}
+.bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden;margin:2px 0 12px}.bar i{display:block;height:100%;background:var(--brand)}
+.addbtn{width:100%;border:0;border-radius:16px;padding:15px;font-size:17px;font-weight:700;background:var(--brand);color:#fff;margin-bottom:12px;cursor:pointer}
+.mrow{display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid var(--line);cursor:pointer}.mrow:last-child{border-bottom:0}
+.mrow .ic{width:38px;height:38px;border-radius:11px;background:var(--brand2);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
+.mrow .ic svg{width:21px;height:21px}.mrow .grow b{display:block;font-size:15px}.mrow .grow span{font-size:13px;color:var(--muted)}
+.mrow .chev{color:var(--muted);font-size:20px}.mrow .val{font-weight:700;white-space:nowrap}
+.back{background:none;border:0;color:var(--brand);font-weight:700;font-size:15px;padding:4px 0 10px;cursor:pointer}
 .tag{display:inline-block;background:var(--brand2);color:var(--brand);font-weight:700;border-radius:7px;padding:2px 7px;font-size:12px;margin-right:6px}
 </style>
 </head>
@@ -452,10 +462,11 @@ const ICONS = {
   income:'<path d="M12 3v18M16.5 7H10a3 3 0 0 0 0 6h4a3 3 0 0 1 0 6H7"/>',
   more:'<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>' };
 function renderTabs(){
-  const list = [['home','Home'],['receipts','Receipts'],['income','Income'],['checklist','Forms'],['accounts','Savings'],['more','More']];
+  const list = [['home','Home'],['receipts','Receipts'],['income','Income'],['checklist','Tax forms'],['more','More']];
   if (tab === 'business') tab = 'income';
-  if (!list.some(t => t[0] === tab)) tab = 'home';
-  $('#tabs').innerHTML = list.map(([k, l]) => `<button data-tab="${k}" class="${tab === k ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>${l}</button>`).join('');
+  if (tab !== 'accounts' && !list.some(t => t[0] === tab)) tab = 'home';
+  const on = tab === 'accounts' ? 'more' : tab;
+  $('#tabs').innerHTML = list.map(([k, l]) => `<button data-tab="${k}" class="${on === k ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>${l}</button>`).join('');
 }
 function render(){
   $('#modeBadge').textContent = store ? (store.kind === 'cloud' ? '☁ Cloud vault' : store.kind === 'device' ? '🔒 On this device' : '⚠ Not saved') : 'Loading…';
@@ -468,31 +479,64 @@ function yearPicker(){
   const y = new Date().getFullYear(), ys = [y - 6, y - 5, y - 4, y - 3, y - 2, y - 1, y].filter(x => x >= y - 6);
   return `<select data-act="year" style="width:auto;padding:6px 10px">${ys.map(x => `<option ${x === Y() ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
 }
+let showAllAlerts = false, moreSec = '';
+const IC = {
+  cam:'<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
+  slip:'<rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h3M13 12h3M8 16h3M13 16h3"/>',
+  bank:'<path d="M3 10l9-6 9 6M5 10v8M9 10v8M15 10v8M19 10v8M3 20h18"/>',
+  file:'<path d="M14 3H6v18h12V7zM14 3v4h4M9 13h6M9 17h6"/>',
+  user:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/>',
+  down:'<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>', lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
+  bell:'<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4zM10 20a2 2 0 0 0 4 0"/>', box:'<path d="M3 7l9-4 9 4v10l-9 4-9-4zM3 7l9 4 9-4M12 11v10"/>',
+  clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', tool:'<path d="M14 6l4 4-8 8H6v-4zM13 7l4 4"/>' };
+const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${IC[k] || ICONS[k] || ''}</svg>`;
+function nextStep(){
+  const docs = reqDocs(), unanswered = QUESTIONS.filter(q => !state.answers[q.id]).length;
+  const now = new Date(), season = now.getMonth() <= 3 && Y() === now.getFullYear() - 1;
+  if (!KINDS.some(([k]) => has(k))) return { t:'Tell TaxKeep about you', b:'Job, gig apps, your own business, family? TaxKeep then shows only what you need.', l:'Get started', a:'goAbout' };
+  if (unanswered) return { t:`Answer ${unanswered} quick question${unanswered > 1 ? 's' : ''}`, b:'Yes or no answers. TaxKeep uses them to list the slips and receipts you need.', l:'Answer now', a:'goQuestions' };
+  const missSlip = docs.find(d => TaxKeepForms.DOC_SLIPS[d.key] && !state.docsDone[d.key]);
+  if (season && missSlip) return { t:`Add your ${missSlip.label.replace(/ \(.*\)$/, '')}`, b:'Slips arrive by the end of February. Snap it when it comes and TaxKeep reads the boxes.', l:'Add slip', a:'addSlip' };
+  if (!yearReceipts().length) return { t:'Snap your first receipt', b:'Pharmacy, dental, daycare, donations' + (isSelf() ? ', business costs' : '') + '. Snap it when you pay, then forget about it.', l:'Snap a receipt', a:'add' };
+  if (season || (docs.length && docs.every(d => state.docsDone[d.key]))) return { t:'Send your package to your preparer', b:'Every receipt, slip and worksheet in one file.', l:'Send package', a:'export' };
+  if (!state.lastExport || Date.now() - state.lastExport > 60 * 864e5) return { t:'Save a backup copy', b:'Your records are only on this phone. Save a copy to Drive or email it to yourself.', l:'Save a copy', a:'export' };
+  return { t:'You\'re on track', b:'Keep snapping receipts as you go. TaxKeep reminds you when slips are due.', l:'Add something', a:'addMenu' };
+}
+function pickFile(accept, cb){
+  const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.style.display = 'none';
+  i.onchange = () => { window.__tkPauseLock = false; const f = i.files && i.files[0]; i.remove(); if (f) cb(f); };
+  document.body.appendChild(i); pauseLockFor(); i.click();
+}
+function addMenu(){
+  const o = [['add','cam','Receipt','Snap or upload a photo or PDF'],['addSlip','slip','Tax slip','T4, T5, T2202, RRSP receipt…'],['addIncome','income', isSelf() ? (has('gig') && !has('business') ? 'Income or gig payout' : 'Income or business payment') : 'Income','Money you received']];
+  if (has('gig')) o.push(['gigCsv','file','Gig earnings file','CSV from Uber, DoorDash, Skip…']);
+  o.push(['stmt','bank','Bank statement','Find receipts in a CSV statement']);
+  openSheet(`<h3>Add</h3>${o.map(([a, i, l, sub]) => `<div class="mrow" data-act="${a}"><div class="ic">${svg(i)}</div><div class="grow"><b>${l}</b><span>${sub}</span></div><div class="chev">›</div></div>`).join('')}
+    <button class="btn sec block" data-act="close" style="margin-top:10px">Cancel</button>`);
+}
 function vHome(){
   const rs = yearReceipts(), docs = reqDocs(), done = docs.filter(d => state.docsDone[d.key]).length, R = room();
-  const al = alerts();
+  const order = { bad:0, warn:1, info:2 }, al = alerts().sort((a, b) => order[a[0]] - order[b[0]]);
+  const shown = showAllAlerts ? al : al.slice(0, 2);
   const name = state.profile.name ? `, ${esc(state.profile.name)}` : '';
-  const byCat = {}; rs.forEach(r => byCat[r.category] = (byCat[r.category] || 0) + num(r.amount));
-  const top = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const ns = nextStep(), e = runEstimate();
+  const row = (go, ic, l, sub, val) => `<div class="mrow" ${go}><div class="ic">${svg(ic)}</div><div class="grow"><b>${l}</b><span>${sub}</span></div><div class="val">${val}</div><div class="chev">›</div></div>`;
   return `
   <div class="row between"><h2>Hi${name} 👋</h2>${yearPicker()}</div>
-  <div class="qa">
-    <button data-act="add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Snap receipt</button>
-    <button data-act="addIncome"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS.income}</svg>Add income</button>
-    <button data-act="addSlip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h3M13 12h3M8 16h3M13 16h3"/></svg>Add slip</button>
-    <button data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export</button>
+  <div class="next"><div class="k">Next step</div><h3>${esc(ns.t)}</h3><p>${esc(ns.b)}</p>
+    ${docs.length ? `<div class="small muted">${done} of ${docs.length} documents gathered</div><div class="bar"><i style="width:${Math.round(100 * done / docs.length)}%"></i></div>` : ''}
+    <button class="btn" data-act="${ns.a}">${esc(ns.l)}</button></div>
+  <button class="addbtn" data-act="addMenu">+ Add</button>
+  ${e && !e.empty ? `<div class="est ${e.result < 0 ? 'owe' : ''}" data-act="goEst"><div class="sm">${e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing'} for ${Y()}</div><div class="big">${money(Math.abs(e.result))}</div><div class="sm">${e.provIncluded ? '' : 'Federal only · '}Tap to see how it adds up</div></div>` : ''}
+  <div class="card" style="padding:4px 14px"><h3 style="margin:10px 0 2px">Your ${Y()}</h3>
+    ${row('data-tab="receipts"', 'receipts', 'Receipts', `${rs.length} saved`, money(sum(rs.map(r => r.amount))))}
+    ${row('data-act="goSlips"', 'slip', 'Tax slips', docs.length ? `${done} of ${docs.length} documents` : 'T4, T5 and more', String(yearSlips().length))}
+    ${row('data-tab="income"', 'income', 'Income', isSelf() ? 'Pay, payouts and business' : 'Pay and other income', money(sum(state.income.filter(x => x.year === Y()).map(x => x.amount))))}
+    ${row('data-tab="accounts"', 'accounts', 'RRSP, TFSA & FHSA', R.rr.set ? 'RRSP room left' : 'Track your room', R.rr.set ? money(R.rr.left) : '')}
   </div>
-  ${(() => { const e = runEstimate(); return e && !e.empty ? `<div class="est ${e.result < 0 ? 'owe' : ''}" data-act="goEst"><div class="sm">${e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing'} for ${Y()}</div><div class="big">${money(Math.abs(e.result))}</div><div class="sm">${e.provIncluded ? '' : 'Federal only · '}Tap to see how it adds up</div></div>` : ''; })()}
-  ${!receipts.length && !state.income.length && !state.slips.length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, log your income, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
-  <div class="grid2">
-    <div class="card stat"><div class="n">${money(sum(rs.map(r => r.amount)))}</div><div class="l">${rs.length} receipt${rs.length === 1 ? '' : 's'} in ${Y()}</div></div>
-    <div class="card stat"><div class="n">${yearSlips().length}</div><div class="l">tax slip${yearSlips().length === 1 ? '' : 's'} on file</div></div>
-    <div class="card stat"><div class="n">${money(sum(state.income.filter(x => x.year === Y()).map(x => x.amount)))}</div><div class="l">income logged</div></div>
-    <div class="card stat"><div class="n">${docs.length ? done + '/' + docs.length : '–'}</div><div class="l">documents gathered</div></div>
-  </div>
-  ${al.length ? `<div class="card"><h3>Heads up</h3>${al.map(([k, t, go]) => `<div class="alert ${k}" data-tab="${go}" style="cursor:pointer">${esc(t)}</div>`).join('')}</div>` : `<div class="alert ok">You're all caught up for ${Y()}.</div>`}
-  ${top.length ? `<div class="card"><h3>Where your receipts are</h3><table class="t">${top.map(([c, a]) => `<tr><td>${esc(catLabel(c))}</td><td>${money(a)}</td></tr>`).join('')}</table></div>` : ''}
-  <p class="disc">TaxKeep organizes your records and flags things to check. It doesn't give tax advice; confirm with your preparer.</p>`;
+  ${al.length ? `<div class="card"><h3>Heads up</h3>${shown.map(([k, t, go]) => `<div class="alert ${k}" data-tab="${go}" style="cursor:pointer">${esc(t)}</div>`).join('')}
+    ${al.length > 2 ? `<button class="btn ghost" data-act="allAlerts">${showAllAlerts ? 'Show less' : `See all ${al.length}`}</button>` : ''}</div>` : ''}
+  <p class="disc">TaxKeep organizes your records. It doesn't give tax advice; confirm with your preparer.</p>`;
 }
 function vReceipts(){
   const cats = isSelf() ? [...PERSONAL, ...BUSINESS] : PERSONAL;
@@ -507,8 +551,7 @@ function vReceipts(){
       <div class="grow"><div class="ell"><b>${esc(r.vendor || 'Receipt')}</b></div><div class="small muted ell">${esc(r.date)} · ${esc(catLabel(r.category))}</div></div>
       <div class="amt">${money(r.amount)}</div></div>`).join('') : `<div class="empty">No receipts ${filter === 'all' ? 'for ' + Y() : 'in this category'} yet.<br>Tap <b>+ Add receipt</b> to snap or upload one.</div>`}
   </div>
-  <div class="card"><h3>Find receipts in a bank or card statement</h3><p class="small muted">Download your statement as a CSV file from your bank's website. TaxKeep picks out pharmacy, dental, daycare, donation${state.profile.selfEmployed ? ' and business' : ''} purchases for you to add.</p>
-    <label class="btn sec block" style="display:block;text-align:center">Import statement (CSV)<input type="file" id="stmtIn" accept=".csv,text/csv,text/plain" hidden></label></div>
+  <button class="btn ghost block" data-act="stmt" style="margin-bottom:8px">Find receipts in a bank statement</button>
   <button class="btn fab" data-act="add">+ Add receipt</button>`;
 }
 async function loadThumbs(){
@@ -659,6 +702,7 @@ function meter(title, r, set, limitLabel, extra){
 function vAccounts(){
   const R = room(), c = state.room.contribs.filter(x => x.year === Y()).sort((a, b) => b.date.localeCompare(a.date));
   return `
+  <button class="back" data-act="moreHome">‹ More</button>
   <div class="row between"><h2>RRSP, TFSA & FHSA</h2>${yearPicker()}</div>
   <div class="card"><h3>RRSP</h3>
     <label class="f">Your RRSP deduction limit for ${Y()} (from your Notice of Assessment or CRA My Account)</label>
@@ -765,33 +809,9 @@ function pastYearsCard(){
 }
 function vMore(){
   const mode = store ? store.kind : 'device';
-  return `
-  <h2>More</h2>
-  <div class="card"><h3>Your tax package</h3>
-    <p class="small muted">One ZIP with every receipt and slip photo, the tax worksheets (PDF), and summaries for your preparer: receipts, slips, checklist, RRSP/TFSA/FHSA and business. You can save it to Drive or Files, or send it by email.</p>
-    <div class="row" style="margin-bottom:8px">${yearPicker()}</div>
-    <button class="btn block" data-act="export" ${dl ? '' : 'disabled'}>Save or send ${Y()} package (.zip)</button>
-    ${dl ? '' : '<p class="small muted" style="margin-top:6px">Export isn\'t available on this device.</p>'}
-    ${state.lastExport ? `<p class="small muted" style="margin-top:6px">Last exported ${new Date(state.lastExport).toLocaleDateString('en-CA')}</p>` : ''}
-    <p class="small muted">Preparer share links come in the full app.</p>
-  </div>
-  <div class="card"><h3>Where your records are kept</h3>
-    <div class="mode ${mode !== 'cloud' ? 'on' : ''}" data-mode="device"><b>🔒 On this device</b><span class="small muted">Stays on this phone only. Never sent to a server. Export a backup often, since CRA wants records kept 6 years.</span></div>
-    <div class="mode ${mode === 'cloud' ? 'on' : ''}" data-mode="cloud"><b>☁ Cloud vault</b><span class="small muted">Private to your account, available on any device you sign in on. ${cloudOK === false ? '<br><b>Coming in the full version of the app.</b>' : ''}</span></div>
-    <p class="small muted">Switching moves your records to the other place.</p>
-  </div>
-  <div class="card"><h3>Security</h3>
-    <div class="toggle"><span>Lock TaxKeep with a PIN</span><input type="checkbox" data-lock ${window.TaxKeepLock && TaxKeepLock.isOn() ? 'checked' : ''}></div>
-    ${window.TaxKeepLock && TaxKeepLock.isOn() ? `<div class="toggle"><span>Unlock with fingerprint</span><input type="checkbox" data-bio ${TaxKeepLock.bioOn() ? 'checked' : ''}></div><button class="btn ghost" data-act="lockNow">Lock now</button>` : '<p class="small muted">Asks for your PIN when you open TaxKeep, so nobody else can see your records.</p>'}
-  </div>
-  <div class="card"><h3>Reminders</h3>
-    ${window.TaxKeepReminders && TaxKeepReminders.available() ? '' : '<p class="small muted">Reminders work in the installed Android app.</p>'}
-    <div class="toggle"><span>Tax deadlines<br><span class="small muted">RRSP deadline, April 30${state.profile.selfEmployed ? ', June 15' : ''}</span></span><input type="checkbox" data-rem="deadlines" ${state.reminders.on && state.reminders.deadlines ? 'checked' : ''}></div>
-    ${state.profile.selfEmployed ? `<div class="toggle"><span>Instalment dates<br><span class="small muted">A week before each one</span></span><input type="checkbox" data-rem="instalments" ${state.reminders.on && state.reminders.instalments ? 'checked' : ''}></div>` : ''}
-    <div class="toggle"><span>Monthly receipt nudge<br><span class="small muted">1st of each month</span></span><input type="checkbox" data-rem="monthly" ${state.reminders.on && state.reminders.monthly ? 'checked' : ''}></div>
-    ${remStatus ? `<p class="small muted">${esc(remStatus)}</p>` : ''}
-    <button class="btn sec" data-act="testRem" style="margin-top:6px">Send a test reminder</button>
-  </div>
+  const back = '<button class="back" data-act="moreHome">‹ More</button>';
+  const S = {
+    about: () => `
   <div class="card"><h3>About you</h3><p class="small muted" style="margin-top:0">TaxKeep only shows the tools that fit you. Tick everything that applies.</p>
     ${kindToggles()}</div>
   ${has('spouse') || has('kids') ? `<div class="card"><h3>Household</h3>
@@ -800,12 +820,56 @@ function vMore(){
       <label class="f">Medical expenses go on</label><select data-hh="medicalBy"><option value="auto" ${state.household.medicalBy === 'auto' ? 'selected' : ''}>Whoever saves more (lower income)</option><option value="me" ${state.household.medicalBy === 'me' ? 'selected' : ''}>My return</option><option value="spouse" ${state.household.medicalBy === 'spouse' ? 'selected' : ''}>Their return</option></select>` : ''}
     ${has('kids') ? `<label class="f">Children (first names, comma-separated)</label><input type="text" data-hh="kids" value="${esc(state.household.kids)}" placeholder="Optional">` : ''}
     <p class="small muted">Lets you mark whose receipt it is and tells you which return each claim saves the most on.</p></div>` : ''}
-  ${pastYearsCard()}
   <div class="card"><h3>Profile</h3>
     <label class="f">First name</label><input type="text" data-prof="name" value="${esc(state.profile.name)}" placeholder="Optional">
     <label class="f">Province</label><select data-prof="province">${['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'].map(p => `<option ${p === state.profile.province ? 'selected' : ''}>${p}</option>`).join('')}</select>
+  </div>`,
+    export: () => `
+  <div class="card"><h3>Your tax package</h3>
+    <p class="small muted">One ZIP with every receipt and slip photo, the tax worksheets (PDF), and summaries for your preparer: receipts, slips, checklist, RRSP/TFSA/FHSA and business. You can save it to Drive or Files, or send it by email.</p>
+    <div class="row" style="margin-bottom:8px">${yearPicker()}</div>
+    <button class="btn block" data-act="export" ${dl ? '' : 'disabled'}>Save or send ${Y()} package (.zip)</button>
+    ${dl ? '' : '<p class="small muted" style="margin-top:6px">Export isn\'t available on this device.</p>'}
+    ${state.lastExport ? `<p class="small muted" style="margin-top:6px">Last exported ${new Date(state.lastExport).toLocaleDateString('en-CA')}</p>` : ''}
+    <p class="small muted">Preparer share links come in the full app.</p>
+  </div>`,
+    security: () => `
+  <div class="card"><h3>Security</h3>
+    <div class="toggle"><span>Lock TaxKeep with a PIN</span><input type="checkbox" data-lock ${window.TaxKeepLock && TaxKeepLock.isOn() ? 'checked' : ''}></div>
+    ${window.TaxKeepLock && TaxKeepLock.isOn() ? `<div class="toggle"><span>Unlock with fingerprint</span><input type="checkbox" data-bio ${TaxKeepLock.bioOn() ? 'checked' : ''}></div><button class="btn ghost" data-act="lockNow">Lock now</button>` : '<p class="small muted">Asks for your PIN when you open TaxKeep, so nobody else can see your records.</p>'}
   </div>
-  <div class="card"><h3>Data</h3><div class="row"><button class="btn sec" data-act="demo">Add sample data</button><button class="btn danger" data-act="wipe">Delete everything</button></div></div>
+  <div class="card"><h3>Where your records are kept</h3>
+    <div class="mode ${mode !== 'cloud' ? 'on' : ''}" data-mode="device"><b>🔒 On this device</b><span class="small muted">Stays on this phone only. Never sent to a server. Export a backup often, since CRA wants records kept 6 years.</span></div>
+    <div class="mode ${mode === 'cloud' ? 'on' : ''}" data-mode="cloud"><b>☁ Cloud vault</b><span class="small muted">Private to your account, available on any device you sign in on. ${cloudOK === false ? '<br><b>Coming in the full version of the app.</b>' : ''}</span></div>
+    <p class="small muted">Switching moves your records to the other place.</p>
+  </div>`,
+    reminders: () => `
+  <div class="card"><h3>Reminders</h3>
+    ${window.TaxKeepReminders && TaxKeepReminders.available() ? '' : '<p class="small muted">Reminders work in the installed Android app.</p>'}
+    <div class="toggle"><span>Tax deadlines<br><span class="small muted">RRSP deadline, April 30${state.profile.selfEmployed ? ', June 15' : ''}</span></span><input type="checkbox" data-rem="deadlines" ${state.reminders.on && state.reminders.deadlines ? 'checked' : ''}></div>
+    ${state.profile.selfEmployed ? `<div class="toggle"><span>Instalment dates<br><span class="small muted">A week before each one</span></span><input type="checkbox" data-rem="instalments" ${state.reminders.on && state.reminders.instalments ? 'checked' : ''}></div>` : ''}
+    <div class="toggle"><span>Monthly receipt nudge<br><span class="small muted">1st of each month</span></span><input type="checkbox" data-rem="monthly" ${state.reminders.on && state.reminders.monthly ? 'checked' : ''}></div>
+    ${remStatus ? `<p class="small muted">${esc(remStatus)}</p>` : ''}
+    <button class="btn sec" data-act="testRem" style="margin-top:6px">Send a test reminder</button>
+  </div>`,
+    years: () => `${pastYearsCard() || '<div class="empty">No earlier years yet.</div>'}`,
+    data: () => `
+  <div class="card"><h3>Data</h3><div class="row"><button class="btn sec" data-act="demo">Add sample data</button><button class="btn danger" data-act="wipe">Delete everything</button></div></div>` };
+  if (moreSec && S[moreSec]) return back + S[moreSec]();
+  const row = (sec, ic, l, sub, go) => `<div class="mrow" ${go || `data-msec="${sec}"`}><div class="ic">${svg(ic)}</div><div class="grow"><b>${l}</b><span>${sub}</span></div><div class="chev">›</div></div>`;
+  const kinds = KINDS.filter(([k]) => has(k)).map(k => k[1]);
+  return `<h2>More</h2>
+  <div class="card" style="padding:4px 14px">
+    ${row('export', 'down', 'Send to your preparer', 'Save or share your ' + Y() + ' package')}
+    ${row('', 'accounts', 'RRSP, TFSA & FHSA', 'Contribution room and limits', 'data-tab="accounts"')}
+  </div>
+  <div class="card" style="padding:4px 14px">
+    ${row('about', 'user', 'About you', kinds.length ? kinds.slice(0, 3).join(', ') + (kinds.length > 3 ? '…' : '') : 'Pick what applies to you')}
+    ${row('reminders', 'bell', 'Reminders', state.reminders.on ? 'On' : 'Off')}
+    ${row('security', 'lock', 'Security and storage', window.TaxKeepLock && TaxKeepLock.isOn() ? 'PIN lock on' : 'PIN lock off')}
+    ${row('years', 'clock', 'Past years', 'Records from earlier years')}
+    ${row('data', 'tool', 'Sample data and reset', 'Try TaxKeep, or start over')}
+  </div>
   <p class="disc">TaxKeep · organizes your records, not tax advice.</p>`;
 }
 
@@ -1424,13 +1488,14 @@ async function doExport(){
 /* ---------------- events ---------------- */
 document.addEventListener('click', async e => {
   if (e.target.closest('label') && e.target.closest('label').querySelector('input[type=file]')) pauseLockFor();
-  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome],[data-slip],[data-seg],[data-year]');
+  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome],[data-slip],[data-seg],[data-year],[data-msec]');
   if (e.target.id === 'modal') { closeSheet(); return; }
   if (!t) return;
   const d = t.dataset;
-  if (d.tab && t.tagName !== 'SELECT'){ tab = d.tab; filter = 'all'; render(); window.scrollTo(0, 0); return; }
+  if (d.tab && t.tagName !== 'SELECT'){ if (t.closest('.alert') && d.tab === 'more') moreSec = 'export'; else if (d.tab === 'more') moreSec = ''; tab = d.tab; filter = 'all'; render(); window.scrollTo(0, 0); return; }
   if (d.filter){ filter = d.filter; render(); return; }
   if (d.seg){ formsSeg = d.seg; render(); return; }
+  if (d.msec){ moreSec = d.msec; render(); window.scrollTo(0, 0); return; }
   if (d.year){ state.profile.year = Number(d.year); persist(); tab = 'home'; render(); window.scrollTo(0, 0); return; }
   if (d.slip){ openSlip(d.slip); return; }
   if (d.open){ openReceipt(d.open); return; }
@@ -1455,6 +1520,14 @@ document.addEventListener('click', async e => {
     case 'wsPdf': saveWorksheets(); break;
     case 'demo': addDemo(); break;
     case 'export': doExport(); break;
+    case 'addMenu': addMenu(); break;
+    case 'allAlerts': showAllAlerts = !showAllAlerts; render(); break;
+    case 'goAbout': tab = 'more'; moreSec = 'about'; render(); window.scrollTo(0, 0); break;
+    case 'goQuestions': tab = 'checklist'; formsSeg = 'list'; render(); window.scrollTo(0, 0); break;
+    case 'goSlips': tab = 'checklist'; formsSeg = 'slips'; render(); window.scrollTo(0, 0); break;
+    case 'moreHome': tab = 'more'; moreSec = ''; render(); window.scrollTo(0, 0); break;
+    case 'stmt': closeSheet(); pickFile('.csv,text/csv,text/plain', importStatement); break;
+    case 'gigCsv': closeSheet(); pickFile('.csv,text/csv,text/plain', importCSV); break;
     case 'wipe': confirmSheet('Delete everything?', 'All receipts, files and answers in this storage will be permanently removed.', 'Delete all', wipe); break;
     case 'addContrib': simpleForm('Add RRSP / TFSA / FHSA entry', [
         { id:'acct', label:'Account', type:'select', opts:[['rrsp','RRSP'],['tfsa','TFSA'],['fhsa','FHSA']] },
@@ -1503,6 +1576,16 @@ document.addEventListener('input', e => { if (e.target.dataset.act === 'pct'){ c
   let pref = 'device'; try { pref = localStorage.getItem('taxkeep_mode') || 'device'; } catch(e){}
   if (pref === 'cloud'){ const c = await makeCloudStore().catch(() => null); if (c){ store = c; cloudOK = true; } }
   if (!store) store = await makeDeviceStore();
+try { const AppP = window.Capacitor && Capacitor.Plugins && Capacitor.Plugins.App;
+  if (AppP) AppP.addListener('backButton', () => {
+    if (document.getElementById('lockScreen') && document.getElementById('lockScreen').offsetParent) { AppP.exitApp(); return; }
+    if ($('#modal').classList.contains('open')){ closeSheet(); return; }
+    if (tab === 'more' && moreSec){ moreSec = ''; render(); return; }
+    if (tab === 'accounts'){ tab = 'more'; render(); return; }
+    if (tab !== 'home'){ tab = 'home'; render(); window.scrollTo(0, 0); return; }
+    AppP.exitApp();
+  });
+} catch(e){}
   try { if (window.TaxKeepLock) TaxKeepLock.init(); } catch(e){}
   await loadAll();
   if (!state.onboarded && (receipts.length || state.income.length || Object.keys(state.answers).length)){ state.onboarded = true; persist(); }
