@@ -27,3 +27,11 @@ TaxKeep organizes records; it does not give tax advice. The name is a placeholde
 - **Home office worksheet**: employee (T777 Part 4) or self-employed (T2125 Part 7).
 - **Past years**: 7 years in the year picker; retention shown in More.
 - **Missing-slip reminders** in February and March.
+
+## v1.4 – features by user type
+Setup (and More → About you) asks what applies: job with a T4, gig/delivery apps, own business, spouse, children, student, work from home, retired/benefits. TaxKeep only shows matching tools:
+- **Gig**: earnings CSV import, app connections, rideshare GST/HST alerts, mileage, set-aside, T2125, GST/HST.
+- **Own business**: business receipts, T2125, GST/HST, mileage, set-aside, home office (T2125 Part 7).
+- **Spouse / children**: household card, "whose receipt", medical and child care on the right return; childcare category only with children.
+- **Student**: tuition category. **Work from home**: employee home office (T777).
+Checklist answers and these settings stay in sync. Older data is sorted into types automatically.

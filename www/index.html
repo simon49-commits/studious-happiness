@@ -225,6 +225,17 @@ const QUESTIONS = [
 const INCOME_TYPES = [['employment','Job (T4)'],['self','Self-employed / gig'],['benefits','EI, pension & benefits'],['invest','Interest & investments'],['rental','Rental'],['other','Other']];
 const INCOME_LABEL = Object.fromEntries(INCOME_TYPES);
 const PLATFORMS = ['Uber','Uber Eats','DoorDash','SkipTheDishes','Instacart','Lyft','Other'];
+// Who the user is decides which features they see.
+const KINDS = [
+  ['job', 'Job with a T4', 'Pay from an employer'],
+  ['gig', 'Gig or delivery apps', 'Uber, DoorDash, SkipTheDishes, Instacart'],
+  ['business', 'My own business', 'Freelance, contracting, a side business'],
+  ['spouse', 'Spouse or partner', 'Married or common-law'],
+  ['kids', 'Children', 'Child care, kids\' medical costs'],
+  ['student', 'Student', 'College, university or trade school'],
+  ['wfh', 'Work from home for my job', 'Employer gives you a T2200'],
+  ['retired', 'Retired or on benefits', 'Pension, CPP, OAS or EI'] ];
+const KIND_Q = { job:'employed', gig:'self', business:'self', kids:'kids', student:'student', wfh:'wfh', retired:'benefits' };
 const CLOUD_MAX = 230000; // chars of data URL that fit in one cloud document
 
 /* ---------------- helpers ---------------- */
@@ -330,7 +341,7 @@ function extFor(f){ const m = { 'image/jpeg':'jpg','image/png':'png','image/webp
 
 /* ---------------- app state ---------------- */
 function defaultState(){
-  return { v:1, profile:{ name:'', year:new Date().getFullYear(), selfEmployed:false, province:'MB' },
+  return { v:1, profile:{ name:'', year:new Date().getFullYear(), selfEmployed:false, province:'MB', kinds:{} },
     answers:{}, docsDone:{}, room:{ rrspLimit:'', tfsaRoom:'', fhsaOpen:false, fhsaCarry:'', fhsaPrior:'', contribs:[] },
     income:[], mileage:[], totalKm:{}, setAsidePct:25, lastExport:0,
     reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{}, slips:[],
@@ -348,7 +359,15 @@ function mergeState(s){
   const m = {...d, ...s, profile:{...d.profile, ...(s.profile||{})}, room:{...d.room, ...(s.room||{})}, reminders:{...d.reminders, ...(s.reminders||{})}, waitlist:{...(s.waitlist||{})}};
   m.income = (m.income || []).map(x => x.type ? x : {...x, type:'self'});
   m.slips = Array.isArray(m.slips) ? m.slips : [];
+  if (!(s.profile && s.profile.kinds)){ // older data: work out what applies from what's there
+    const inc = m.income || [], gigTxt = inc.filter(x => x.type === 'self').map(x => (x.client || '') + (x.imported ? ' import' : '')).join(' ');
+    const gig = !!m.profile.selfEmployed && /uber|lyft|doordash|skip|instacart|import/i.test(gigTxt);
+    m.profile.kinds = { job: inc.some(x => x.type === 'employment') || (m.slips || []).some(x => x.type === 'T4') || (s.answers || {}).employed === 'yes',
+      gig, business: !!m.profile.selfEmployed && !gig, spouse: !!(s.household || {}).spouse, kids: !!(s.household || {}).kids || (s.answers || {}).kids === 'yes',
+      student: (s.answers || {}).student === 'yes', wfh: (s.answers || {}).wfh === 'yes' || ((s.homeOffice || {}).kind === 'employee'), retired: (s.answers || {}).benefits === 'yes' };
+  }
   m.gst = {...d.gst, ...(s.gst||{})}; m.household = {...d.household, ...(s.household||{})}; m.noa = {...(s.noa||{})};
+  m.profile.selfEmployed = !!(m.profile.kinds.gig || m.profile.kinds.business); m.household.spouse = !!m.profile.kinds.spouse;
   return m;
 }
 async function loadAll(){
@@ -358,6 +377,19 @@ async function loadAll(){
 }
 const Y = () => Number(state.profile.year);
 const yearReceipts = () => receipts.filter(r => (r.date || '').startsWith(String(Y())));
+const has = k => !!(state.profile.kinds || {})[k];
+const isSelf = () => has('gig') || has('business');
+function setKind(k, on){
+  state.profile.kinds[k] = !!on;
+  state.profile.selfEmployed = isSelf();
+  state.household.spouse = has('spouse');
+  const q = KIND_Q[k];
+  if (q){ if (on) state.answers[q] = 'yes'; else if (!Object.keys(KIND_Q).some(o => KIND_Q[o] === q && has(o))) state.answers[q] = 'no'; }
+}
+function selfLabel(){ return has('gig') && has('business') ? 'Self-employed / gig' : has('gig') ? 'Gig app payout' : 'Business income'; }
+function personalCats(keep){
+  return PERSONAL.filter(([k]) => k === keep || !((k === 'childcare' && !has('kids')) || (k === 'tuition' && !has('student')) || (k === 'employment' && !has('job') && !has('wfh'))));
+}
 const yearSlips = () => state.slips.filter(s => Number(s.year) === Y());
 const reqDocs = () => { const out = []; QUESTIONS.forEach(q => { if (state.answers[q.id] === 'yes') q.docs.forEach((d, i) => out.push({ key:q.id + ':' + i, label:d, q })); }); return out; };
 
@@ -404,7 +436,7 @@ function alerts(){
   }
   const mo = new Date().getMonth();
   if (mo >= 1 && mo <= 3 && Y() === new Date().getFullYear() - 1){ const miss = reqDocs().filter(d => TaxKeepForms.DOC_SLIPS[d.key] && !state.docsDone[d.key]); if (miss.length) out.push(['warn', `Still missing for ${Y()}: ${miss.map(d => d.label).join(', ')}.`, 'checklist']); }
-  if (state.profile.selfEmployed && !state.gst.registered){ const k = gigKind(); if (k.ride) out.push(['bad', 'Rideshare income: you must be registered for GST/HST from your first fare.', 'income']); else if (last4qIncome() >= 30000) out.push(['bad', `${money(last4qIncome())} of business income in 12 months: you're over the $30,000 GST/HST limit and must register.`, 'income']); }
+  if (isSelf() && !state.gst.registered){ const k = gigKind(); if (has('gig') && k.ride) out.push(['bad', 'Rideshare income: you must be registered for GST/HST from your first fare.', 'income']); else if (last4qIncome() >= 30000) out.push(['bad', `${money(last4qIncome())} of business income in 12 months: you're over the $30,000 GST/HST limit and must register.`, 'income']); }
   if (store && store.kind !== 'cloud' && receipts.length && (!state.lastExport || Date.now() - state.lastExport > 60 * 864e5)) out.push(['warn', 'Your records live only on this device. Export a backup copy so a lost phone doesn’t mean lost receipts.', 'more']);
   if (store && store.kind === 'memory') out.push(['bad', 'This device blocked on-device storage, so nothing will be kept after you close the app.', 'more']);
   return out;
@@ -451,7 +483,7 @@ function vHome(){
     <button data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export</button>
   </div>
   ${(() => { const e = runEstimate(); return e && !e.empty ? `<div class="est ${e.result < 0 ? 'owe' : ''}" data-act="goEst"><div class="sm">${e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing'} for ${Y()}</div><div class="big">${money(Math.abs(e.result))}</div><div class="sm">${e.provIncluded ? '' : 'Federal only · '}Tap to see how it adds up</div></div>` : ''; })()}
-  ${!receipts.length && !state.income.length && !Object.keys(state.answers).length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, log your income, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
+  ${!receipts.length && !state.income.length && !state.slips.length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, log your income, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
   <div class="grid2">
     <div class="card stat"><div class="n">${money(sum(rs.map(r => r.amount)))}</div><div class="l">${rs.length} receipt${rs.length === 1 ? '' : 's'} in ${Y()}</div></div>
     <div class="card stat"><div class="n">${yearSlips().length}</div><div class="l">tax slip${yearSlips().length === 1 ? '' : 's'} on file</div></div>
@@ -463,7 +495,7 @@ function vHome(){
   <p class="disc">TaxKeep organizes your records and flags things to check. It doesn't give tax advice; confirm with your preparer.</p>`;
 }
 function vReceipts(){
-  const cats = state.profile.selfEmployed ? [...PERSONAL, ...BUSINESS] : PERSONAL;
+  const cats = isSelf() ? [...PERSONAL, ...BUSINESS] : PERSONAL;
   let rs = yearReceipts(); const used = new Set(rs.map(r => r.category));
   if (filter !== 'all') rs = rs.filter(r => r.category === filter);
   return `
@@ -510,8 +542,8 @@ function vWorksheets(){
   return `
   <div class="card"><h3>Worksheets for your preparer</h3><p class="small muted">Your slips, receipts and income, sorted by the line they go on. Your preparer can work straight from this.</p>
     <button class="btn block" data-act="wsPdf" ${dl ? '' : 'disabled'}>Save or send ${Y()} worksheets (PDF)</button></div>
-  <div class="card"><div class="row between"><h3>Home office</h3><button class="btn sec" data-act="homeOffice">${state.homeOffice ? 'Edit' : 'Set up'}</button></div>
-    <p class="small muted" style="margin:0">${(() => { const h = TaxKeepForms.homeOfficeCalc(state.homeOffice); return h ? `${Math.round(h.pct * 100)}% of your home · ${money(h.total)} to claim (${h.emp ? 'employee, T777' : 'self-employed, T2125'})` : 'Worked from home for your employer (with a T2200), or run your business from home? Enter your space and costs once.'; })()}</p></div>
+  ${has('wfh') || isSelf() || state.homeOffice ? `<div class="card"><div class="row between"><h3>Home office</h3><button class="btn sec" data-act="homeOffice">${state.homeOffice ? 'Edit' : 'Set up'}</button></div>
+    <p class="small muted" style="margin:0">${(() => { const h = TaxKeepForms.homeOfficeCalc(state.homeOffice); return h ? `${Math.round(h.pct * 100)}% of your home · ${money(h.total)} to claim (${h.emp ? 'employee, T777' : 'self-employed, T2125'})` : 'Enter your work space and home costs once and TaxKeep works out the claim.'; })()}</p></div>` : ''}
   ${shown.length ? shown.map(s => `<div class="card ws"><h3>${esc(s.title)}</h3><div class="form">${esc(s.form)}</div>
     ${s.rows && s.rows.length ? `<table class="wt">${s.rows.map(row).join('')}</table>` : ''}
     ${s.rows2 && s.rows2.length ? `<p class="small" style="margin:10px 0 2px"><b>${esc(s.rows2Title)}</b></p><table class="wt">${s.rows2.map(row).join('')}</table>` : ''}
@@ -523,7 +555,7 @@ function vWorksheets(){
 }
 function worksheetSections(){
   return TaxKeepForms.build({ year:Y(), slips:state.slips, receipts, income:state.income, contribs:state.room.contribs, selfEmployed:state.profile.selfEmployed,
-    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel, gst:state.gst, homeOffice:state.homeOffice });
+    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel, gst: isSelf() ? state.gst : null, homeOffice:state.homeOffice });
 }
 function worksheetPdf(){ return TaxKeepForms.pdf(worksheetSections().concat(estimateSection()), { year:Y(), name:state.profile.name, province:state.profile.province, date:today() }); }
 async function saveWorksheets(){
@@ -666,15 +698,15 @@ function vIncome(){
     <div class="list">${show.length ? show.map(x => `<div class="item" data-editincome="${x.id}"><div class="grow"><div class="ell"><b>${esc(x.client || INCOME_LABEL[x.type] || 'Income')}</b></div><div class="small muted ell">${esc(x.date)} · ${esc(INCOME_LABEL[x.type] || 'Income')}${num(x.tax) ? ' · tax ' + money(x.tax) : ''}${num(x.gst) ? ' · GST/HST ' + money(x.gst) : ''}</div></div><div class="amt">${money(x.amount)}</div></div>`).join('') : '<div class="empty small">Add pay from your job, gig apps, EI, interest or anything else you earned.</div>'}</div>
     ${list.length > show.length ? `<button class="btn ghost block" data-act="incomeAll">Show all ${list.length}</button>` : ''}
   </div>
-  <div class="card"><h3>Gig and delivery apps</h3>
+  ${has('gig') ? `<div class="card"><h3>Gig and delivery apps</h3>
     <p class="small muted">Import your earnings from Uber, DoorDash, SkipTheDishes, Instacart and others. Download your earnings or payout statement as a CSV file from the app's website, then import it here.</p>
     <label class="btn block" style="display:block;text-align:center">Import earnings file (CSV)<input type="file" id="csvIn" accept=".csv,text/csv,text/plain,text/comma-separated-values" hidden></label>
     <div style="margin-top:14px"><b class="small">Connect your accounts directly</b>
       ${['Uber','DoorDash','SkipTheDishes','Instacart'].map(pl => `<div class="toggle"><span>${pl} <span class="pill grey">Coming soon</span></span><label class="row small"><input type="checkbox" data-wait="${pl}" ${state.waitlist[pl] ? 'checked' : ''}> I use this</label></div>`).join('')}
       <p class="small muted">These apps don't let other apps connect to your account yet. Tick the ones you use, and they'll be first in line when connections become available.</p>
     </div>
-  </div>
-  ${state.profile.selfEmployed ? vBusinessParts() : `<p class="disc">Self-employed or doing gig work? Add a "Self-employed / gig" income entry, or turn it on in More → Profile, to get expense, mileage and set-aside tools.</p>`}`;
+  </div>` : ''}
+  ${isSelf() ? vBusinessParts() : `<p class="disc">Drive for a gig app or run a business on the side? Turn it on in More → About you to get earnings import, expenses, mileage and GST/HST tools.</p>`}`;
 }
 function gigKind(){
   const yi = state.income.filter(x => x.type === 'self'), txt = yi.map(x => x.client || '').join(' | ');
@@ -696,7 +728,7 @@ function gstCard(){
 function vBusinessParts(){
   const B = biz(), n = nextInstalment();
   return `
-  <h2 style="margin-top:22px">Self-employed</h2>
+  <h2 style="margin-top:22px">${has('gig') && !has('business') ? 'Gig work' : has('business') && !has('gig') ? 'Your business' : 'Self-employed'}</h2>
   <div class="grid2">
     <div class="card stat"><div class="n">${money(B.income)}</div><div class="l">self-employed income</div></div>
     <div class="card stat"><div class="n">${money(B.exp)}</div><div class="l">deductible expenses (est.)</div></div>
@@ -716,6 +748,9 @@ function vBusinessParts(){
     <div class="list">${B.mil.length ? B.mil.sort((a, b) => b.date.localeCompare(a.date)).map(x => `<div class="item" data-deltrip="${x.id}"><div class="grow"><b>${esc(x.purpose || 'Trip')}</b><div class="small muted">${esc(x.date)} · tap to remove</div></div><div class="amt">${num(x.km)} km</div></div>`).join('') : '<div class="empty small">No trips yet.</div>'}</div>
   </div>
   <p class="disc">Meals count at 50%. Estimates are for planning only; your preparer makes the final numbers.</p>`;
+}
+function kindToggles(id){
+  return KINDS.map(([k, l, sub]) => `<div class="toggle"><span>${esc(l)}<br><span class="small muted">${esc(sub)}</span></span><input type="checkbox" ${id ? `data-obk="${k}"` : `data-kind="${k}"`} ${has(k) ? 'checked' : ''}></div>`).join('');
 }
 function pastYearsCard(){
   const now = new Date().getFullYear(), yrs = {};
@@ -757,18 +792,18 @@ function vMore(){
     ${remStatus ? `<p class="small muted">${esc(remStatus)}</p>` : ''}
     <button class="btn sec" data-act="testRem" style="margin-top:6px">Send a test reminder</button>
   </div>
-  <div class="card"><h3>Household</h3>
-    <div class="toggle"><span>I have a spouse or common-law partner</span><input type="checkbox" data-hh="spouse" ${state.household.spouse ? 'checked' : ''}></div>
-    ${state.household.spouse ? `<div class="grid2"><div><label class="f">Their first name</label><input type="text" data-hh="spouseName" value="${esc(state.household.spouseName)}"></div>
+  <div class="card"><h3>About you</h3><p class="small muted" style="margin-top:0">TaxKeep only shows the tools that fit you. Tick everything that applies.</p>
+    ${kindToggles()}</div>
+  ${has('spouse') || has('kids') ? `<div class="card"><h3>Household</h3>
+    ${has('spouse') ? `<div class="grid2"><div><label class="f">Their first name</label><input type="text" data-hh="spouseName" value="${esc(state.household.spouseName)}"></div>
       <div><label class="f">Their net income (estimate)</label><input type="number" inputmode="decimal" data-hh="spouseNet" value="${esc(state.household.spouseNet)}" placeholder="e.g. 38000"></div></div>
       <label class="f">Medical expenses go on</label><select data-hh="medicalBy"><option value="auto" ${state.household.medicalBy === 'auto' ? 'selected' : ''}>Whoever saves more (lower income)</option><option value="me" ${state.household.medicalBy === 'me' ? 'selected' : ''}>My return</option><option value="spouse" ${state.household.medicalBy === 'spouse' ? 'selected' : ''}>Their return</option></select>` : ''}
-    <label class="f">Children (first names, comma-separated)</label><input type="text" data-hh="kids" value="${esc(state.household.kids)}" placeholder="Optional">
-    <p class="small muted">Lets you mark whose receipt it is and tells you which return each claim saves the most on.</p></div>
+    ${has('kids') ? `<label class="f">Children (first names, comma-separated)</label><input type="text" data-hh="kids" value="${esc(state.household.kids)}" placeholder="Optional">` : ''}
+    <p class="small muted">Lets you mark whose receipt it is and tells you which return each claim saves the most on.</p></div>` : ''}
   ${pastYearsCard()}
   <div class="card"><h3>Profile</h3>
     <label class="f">First name</label><input type="text" data-prof="name" value="${esc(state.profile.name)}" placeholder="Optional">
     <label class="f">Province</label><select data-prof="province">${['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'].map(p => `<option ${p === state.profile.province ? 'selected' : ''}>${p}</option>`).join('')}</select>
-    <label class="row" style="margin-top:12px"><input type="checkbox" data-se ${state.profile.selfEmployed ? 'checked' : ''}> I'm self-employed or do gig work</label>
   </div>
   <div class="card"><h3>Data</h3><div class="row"><button class="btn sec" data-act="demo">Add sample data</button><button class="btn danger" data-act="wipe">Delete everything</button></div></div>
   <p class="disc">TaxKeep · organizes your records, not tax advice.</p>`;
@@ -784,13 +819,13 @@ function confirmSheet(title, body, okLabel, onOk){
 let pendingFile = null;
 function whoOptions(){
   const h = state.household, o = [['me', 'Me']];
-  if (h.spouse) o.push(['spouse', h.spouseName || 'Spouse / partner']);
-  String(h.kids || '').split(',').map(k => k.trim()).filter(Boolean).forEach(k => o.push(['kid:' + k, k]));
+  if (has('spouse')) o.push(['spouse', h.spouseName || 'Spouse / partner']);
+  if (has('kids')) String(h.kids || '').split(',').map(k => k.trim()).filter(Boolean).forEach(k => o.push(['kid:' + k, k]));
   return o;
 }
 function receiptForm(r){
   pendingFile = null;
-  const cats = state.profile.selfEmployed ? [['Personal credits', PERSONAL], ['Business (T2125)', BUSINESS]] : [['Personal credits', PERSONAL]];
+  const pc = personalCats(r && r.category), cats = isSelf() || (r && isBiz(r.category)) ? [['Personal credits', pc], ['Business (T2125)', BUSINESS]] : [['Personal credits', pc]];
   openSheet(`
     <h3>${r ? 'Edit receipt' : 'Add receipt'}</h3>
     ${r ? '' : `<label class="drop" id="drop"><input type="file" id="fileIn" accept="image/*,application/pdf" hidden><div id="dropTxt">📷 Tap to take a photo or choose an image / PDF</div></label>`}
@@ -1003,12 +1038,14 @@ async function importStatement(file){
     let a = debitC >= 0 ? parseMoney(r[debitC]) : parseMoney(r[amtC]); if (!isFinite(a) || !a) return;
     if (debitC >= 0) a = Math.abs(a); else if (purchNeg){ if (a > 0) return; a = -a; } else { if (a < 0) return; }
     const desc = textCols.map(k => String(r[k] || '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').slice(0, 60);
-    const cat = window.TaxKeepOCR ? TaxKeepOCR.guessCategory(desc, state.profile.selfEmployed) : null;
+    const cat = window.TaxKeepOCR ? TaxKeepOCR.guessCategory(desc, isSelf()) : null;
     const key = ['stmt', date, a.toFixed(2), desc].join('|');
     if (receipts.some(x => x.key === key)) return;
     items.push({ date, amount: Math.round(a * 100) / 100, desc, cat, key, pick: !!cat && cat !== 'b_meals' });
   });
-  const cats = state.profile.selfEmployed ? [...PERSONAL, ...BUSINESS] : PERSONAL;
+  const cats = isSelf() ? [...personalCats(), ...BUSINESS] : personalCats();
+  const allowedCat = new Set(cats.map(c => c[0]));
+  items.forEach(x => { if (x.cat && !allowedCat.has(x.cat)){ x.cat = null; x.pick = false; } });
   let showAll = false;
   const draw = () => {
     const list = items.map((x, i) => [x, i]).filter(([x]) => showAll || x.cat);
@@ -1037,10 +1074,10 @@ async function importStatement(file){
 
 /* ---------------- home office ---------------- */
 function homeOfficeForm(){
-  const h = state.homeOffice || { kind: state.profile.selfEmployed ? 'self' : 'employee', area:'', total:'', shared:false, hours:'', months:12, commission:false, exp:{} };
+  const h = state.homeOffice || { kind: isSelf() && !has('wfh') ? 'self' : 'employee', area:'', total:'', shared:false, hours:'', months:12, commission:false, exp:{} };
   const ex = [['rent','Rent'],['elec','Electricity'],['heat','Heat'],['water','Water'],['internet','Internet (monthly fees)'],['maint','Maintenance and minor repairs'],['insurance','Home insurance'],['proptax','Property taxes'],['mortgage','Mortgage interest']];
   openSheet(`<h3>Home office</h3>
-    <label class="f">Who is it for?</label><select id="hKind"><option value="employee" ${h.kind !== 'self' ? 'selected' : ''}>My job (employer gave me a T2200)</option><option value="self" ${h.kind === 'self' ? 'selected' : ''}>My own business</option></select>
+    <label class="f">Who is it for?</label><select id="hKind">${has('wfh') || h.kind !== 'self' || !isSelf() ? `<option value="employee" ${h.kind !== 'self' ? 'selected' : ''}>My job (employer gave me a T2200)</option>` : ''}${isSelf() || h.kind === 'self' ? `<option value="self" ${h.kind === 'self' ? 'selected' : ''}>My own business</option>` : ''}</select>
     <label class="row small" id="hComRow" style="margin-top:8px"><input type="checkbox" id="hCom" ${h.commission ? 'checked' : ''} style="width:auto"> I earn commissions from my job</label>
     <div class="grid2"><div><label class="f">Work space (sq ft)</label><input type="number" id="hArea" value="${esc(h.area)}" placeholder="e.g. 120"></div><div><label class="f">Whole home (sq ft)</label><input type="number" id="hTotal" value="${esc(h.total)}" placeholder="e.g. 1100"></div></div>
     <label class="row small" style="margin-top:8px"><input type="checkbox" id="hShared" ${h.shared ? 'checked' : ''} style="width:auto"> The space is also used for personal things</label>
@@ -1069,9 +1106,9 @@ function homeOfficeForm(){
 
 /* ---------------- income ---------------- */
 function incomeForm(x){
-  const def = x ? x.type : (state.profile.selfEmployed ? 'self' : 'employment');
+  const def = x ? x.type : (isSelf() ? 'self' : has('retired') && !has('job') ? 'benefits' : 'employment');
   openSheet(`<h3>${x ? 'Edit income' : 'Add income'}</h3>
-    <label class="f">Type</label><select id="iType">${INCOME_TYPES.map(([k, l]) => `<option value="${k}" ${def === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>
+    <label class="f">Type</label><select id="iType">${INCOME_TYPES.filter(([k]) => k !== 'self' || isSelf() || (x && x.type === 'self')).map(([k, l]) => `<option value="${k}" ${def === k ? 'selected' : ''}>${esc(k === 'self' ? selfLabel() : l)}</option>`).join('')}</select>
     <label class="f">From (employer, app or payer)</label><input type="text" id="iSrc" value="${esc(x ? x.client : '')}" placeholder="e.g. your employer, Uber, Service Canada">
     <div class="grid2"><div><label class="f">Date received</label><input type="date" id="iDate" value="${esc(x ? x.date : today())}"></div>
     <div><label class="f">Amount ($)</label><input type="number" inputmode="decimal" step="0.01" id="iAmt" value="${x ? esc(x.amount) : ''}" placeholder="0.00"></div></div>
@@ -1095,7 +1132,7 @@ function incomeForm(x){
       tax: ['employment','benefits','other'].includes(t) ? num($('#iTax').value) : 0, gst: t === 'self' ? num($('#iGst').value) : 0 };
     state.income = state.income.filter(i => i.id !== e.id).concat(e);
     closeSheet();
-    if (t === 'self' && !state.profile.selfEmployed){ state.profile.selfEmployed = true; toast('Saved. Self-employed tools are now on.'); } else toast('Saved');
+    toast('Saved');
     if (e.year !== Y()) { state.profile.year = e.year; }
     persist(); render();
   };
@@ -1179,10 +1216,10 @@ async function importCSV(file){
   ['#cP','#cD','#cA','#cS'].forEach(id => $(id).onchange = build); build();
   $('#cGo').onclick = () => {
     state.income = state.income.concat(parsed);
-    const turnedOn = !state.profile.selfEmployed; state.profile.selfEmployed = true;
+    const turnedOn = !has('gig'); if (turnedOn) setKind('gig', true);
     const yrs = parsed.map(x => x.year); if (yrs.length && !yrs.includes(Y())) state.profile.year = Math.max(...yrs);
     closeSheet(); persist(); tab = 'income'; render();
-    toast(`Imported ${parsed.length} payments` + (turnedOn ? '. Self-employed tools are now on.' : ''));
+    toast(`Imported ${parsed.length} payments` + (turnedOn ? '. Gig tools are now on.' : ''));
   };
 }
 
@@ -1191,7 +1228,7 @@ async function syncReminders(){
   if (!window.TaxKeepReminders || !TaxKeepReminders.available()) return;
   const on = state.reminders.on;
   const missing = on && state.reminders.deadlines ? reqDocs().filter(d => TaxKeepForms.DOC_SLIPS[d.key] && !state.docsDone[d.key]).map(d => d.label.replace(/ \(.*\)$/, '')) : [];
-  const r = await TaxKeepReminders.sync({ ...(on ? state.reminders : { deadlines:false, instalments:false, monthly:false }), selfEmployed: state.profile.selfEmployed, missing, gst: on ? state.gst : null }).catch(() => ({ ok:false }));
+  const r = await TaxKeepReminders.sync({ ...(on ? state.reminders : { deadlines:false, instalments:false, monthly:false }), selfEmployed: state.profile.selfEmployed, missing, gst: on && isSelf() ? state.gst : null }).catch(() => ({ ok:false }));
   if (r.ok) remStatus = r.count ? `${r.count} reminders set. Next: "${r.next.title}" on ${r.next.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}.` : '';
   else remStatus = r.reason === 'denied' ? 'Notifications are blocked. Turn them on in your phone\'s Settings → Apps → TaxKeep → Notifications.' : '';
   if (tab === 'more') render();
@@ -1218,7 +1255,8 @@ function showOnboarding(){
       el.innerHTML = `<div class="ob-in"><h1 style="margin-top:20px">Let's set you up</h1><p>You can change any of this later in More.</p>
         <label class="f">First name (optional)</label><input type="text" id="obName" value="${esc(state.profile.name)}">
         <label class="f">Province or territory</label><select id="obProv">${['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'].map(p => `<option ${p === state.profile.province ? 'selected' : ''}>${p}</option>`).join('')}</select>
-        <div class="toggle" style="margin-top:10px"><span>I'm self-employed or do gig work<br><span class="small muted">Uber, DoorDash, freelance, contracting</span></span><input type="checkbox" id="obSelf" ${state.profile.selfEmployed ? 'checked' : ''}></div>
+        <h3 style="margin:16px 0 4px">What applies to you?</h3><p class="small" style="margin:0 0 4px">TaxKeep shows only the tools you need.</p>${kindToggles(true)}
+        <h3 style="margin:16px 0 4px">Extras</h3>
         <div class="toggle"><span>Remind me about tax deadlines</span><input type="checkbox" id="obRem" checked></div>
         <div class="toggle"><span>Lock TaxKeep with a PIN</span><input type="checkbox" id="obLock"></div>
         ${dots(3)}<button class="btn block" data-ob="done">Start using TaxKeep</button></div>`;
@@ -1226,7 +1264,8 @@ function showOnboarding(){
   };
   const finish = async (skip) => {
     if (!skip){
-      state.profile.name = $('#obName').value.trim(); state.profile.province = $('#obProv').value; state.profile.selfEmployed = $('#obSelf').checked;
+      state.profile.name = $('#obName').value.trim(); state.profile.province = $('#obProv').value;
+      el.querySelectorAll('[data-obk]').forEach(c => setKind(c.dataset.obk, c.checked));
       state.reminders.on = $('#obRem').checked;
     }
     const wantLock = !skip && $('#obLock').checked;
@@ -1278,9 +1317,10 @@ async function addDemo(){
   const y = Y();
   const items = [
     ['Shoppers Drug Mart', 84.37, 'medical', '03-14', '#c8102e'], ['City Dental Clinic', 260, 'medical', '06-02', '#2a6f97'],
-    ['Little Stars Daycare', 1150, 'childcare', '09-30', '#e09f3e'], ['Winnipeg Harvest', 150, 'donations', '12-05', '#3a7d44'],
+    ['Winnipeg Harvest', 150, 'donations', '12-05', '#3a7d44'],
     ['Specsavers', 329.99, 'medical', '08-19', '#00704a'] ];
-  if (state.profile.selfEmployed) items.push(['Staples', 64.5, 'b_office', '02-11', '#cc0000'], ['Petro-Canada', 72.4, 'b_vehicle', '04-21', '#d71920'], ['Bell', 95, 'b_phone', '05-01', '#00549a']);
+  if (has('kids')) items.push(['Little Stars Daycare', 1150, 'childcare', '09-30', '#e09f3e']);
+  if (isSelf()) items.push(['Staples', 64.5, 'b_office', '02-11', '#cc0000'], ['Petro-Canada', 72.4, 'b_vehicle', '04-21', '#d71920'], ['Bell', 95, 'b_phone', '05-01', '#00549a']);
   toast('Adding sample data…');
   for (const [v, a, c, d, col] of items){
     const m = { id:newId(), vendor:v, amount:a, category:c, date:`${y}-${d}`, note:'Sample', hasFile:true, fileType:'image/svg+xml', fileName:'sample.svg', created:Date.now() };
@@ -1288,7 +1328,8 @@ async function addDemo(){
     await store.putReceipt(m); receipts.push(m);
   }
   receipts.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  Object.assign(state.answers, { employed:'yes', medical:'yes', kids:'yes', donate:'yes', rrsp:'yes', moved:'no', student:'no' });
+  Object.assign(state.answers, { medical:'yes', donate:'yes', rrsp:'yes', moved:'no' });
+  if (!has('job')) setKind('job', true);
   if (state.room.rrspLimit === '') state.room.rrspLimit = '9500';
   if (state.room.tfsaRoom === '') state.room.tfsaRoom = '14000';
   state.room.contribs.push({ id:newId(), year:y, acct:'rrsp', type:'contrib', date:`${y}-02-20`, amount:4000 }, { id:newId(), year:y, acct:'tfsa', type:'contrib', date:`${y}-01-10`, amount:6000 });
@@ -1393,7 +1434,11 @@ document.addEventListener('click', async e => {
   if (d.year){ state.profile.year = Number(d.year); persist(); tab = 'home'; render(); window.scrollTo(0, 0); return; }
   if (d.slip){ openSlip(d.slip); return; }
   if (d.open){ openReceipt(d.open); return; }
-  if (d.ans){ state.answers[d.ans] = d.v; if (d.ans === 'self' && d.v === 'yes' && !state.profile.selfEmployed){ state.profile.selfEmployed = true; toast('Business tools turned on'); } persist(); render(); return; }
+  if (d.ans){ state.answers[d.ans] = d.v;
+    const ks = Object.keys(KIND_Q).filter(k => KIND_Q[k] === d.ans);
+    if (d.v === 'yes' && ks.length && !ks.some(has)){ const k = d.ans === 'self' ? (gigKind().ride || gigKind().delivery ? 'gig' : 'business') : ks[0]; setKind(k, true); toast(`${KINDS.find(x => x[0] === k)[1]} tools turned on. Change it in More → About you.`); }
+    if (d.v === 'no') ks.forEach(k => { if (has(k)) setKind(k, false); });
+    persist(); render(); return; }
   if (d.mode){ switchMode(d.mode); return; }
   if (d.delreceipt){ const id = d.delreceipt; confirmSheet('Delete this receipt?', 'The receipt and its photo will be removed.', 'Delete', async () => { await store.deleteFile(id).catch(() => {}); await store.deleteReceipt(id).catch(() => {}); receipts = receipts.filter(x => x.id !== id); render(); toast('Deleted'); }); return; }
   if (d.delcontrib){ state.room.contribs = state.room.contribs.filter(x => x.id !== d.delcontrib); persist(); render(); return; }
@@ -1435,7 +1480,7 @@ document.addEventListener('change', e => {
   else if (t.hasAttribute('data-fhsa')){ state.room.fhsaOpen = t.checked; persist(); render(); }
   else if (t.hasAttribute('data-totalkm')){ state.totalKm[Y()] = t.value; persist(); render(); }
   else if (d.prof){ state.profile[d.prof] = t.value; persist(); render(); }
-  else if (t.hasAttribute('data-se')){ state.profile.selfEmployed = t.checked; persist(); render(); if (state.reminders.on) syncReminders(); }
+  else if (d.kind){ setKind(d.kind, t.checked); persist(); render(); if (state.reminders.on) syncReminders(); }
   else if (t.id === 'noaIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) readNOA(f); t.value = ''; }
   else if (t.id === 'stmtIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) importStatement(f); t.value = ''; }
   else if (d.gst){ state.gst[d.gst] = t.type === 'checkbox' ? t.checked : t.value; persist(); render(); if (state.reminders.on) syncReminders(); }
