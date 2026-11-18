@@ -17,3 +17,13 @@ TaxKeep organizes records; it does not give tax advice. The name is a placeholde
 ## Tax forms (v1.2)
 - **Slips**: snap or type T4, T4A, T4E, T5, T3, T2202, RRSP receipts, T4RSP, T4A(P), T4A(OAS), T5007, T4FHSA. TaxKeep reads the main boxes from a photo (`www/ocr.js` readText + `www/forms.js` parseSlip) and ticks off the checklist.
 - **Worksheets**: slips, receipts and income sorted by T1 / T2125 line numbers, with receipt lists for medical, donations, child care, moving, T777 and more. Saved as a PDF (jsPDF, bundled locally) and included in the export ZIP with `Slips.csv` and slip photos.
+
+## v1.3
+- **Refund estimate** (`www/estimate.js`): federal + Manitoba tax for 2025/2026, CPP on self-employment, medical/donation/tuition credits. Other provinces show federal only.
+- **GST/HST worksheet**: lines 101/103/106/109, quick method comparison, rideshare and $30,000 registration alerts, filing reminders.
+- **Notice of Assessment reader**: RRSP limit, unused RRSP contributions, tuition carryforward.
+- **Household**: spouse and children, whose receipt it is, which return medical and child care go on.
+- **Bank/card statement import**: finds likely deductible purchases in a CSV.
+- **Home office worksheet**: employee (T777 Part 4) or self-employed (T2125 Part 7).
+- **Past years**: 7 years in the year picker; retention shown in More.
+- **Missing-slip reminders** in February and March.

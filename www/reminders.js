@@ -20,6 +20,15 @@
       if (opts.instalments && opts.selfEmployed){
         [[3,15],[6,15],[9,15],[12,15]].forEach(([m, d]) => add(at(yr, m, d - 7), 'Tax instalment due in a week', `If CRA asked you to pay instalments, the next one is due ${new Date(yr, m - 1, d).toLocaleDateString('en-CA',{month:'long',day:'numeric'})}.`));
       }
+      if (opts.missing && opts.missing.length){
+        const list = opts.missing.slice(0, 4).join(', ') + (opts.missing.length > 4 ? ' and more' : '');
+        add(at(yr, 2, 20), `Still missing for ${taxYear}`, `Your ${taxYear} slips should be arriving. Still to add: ${list}.`);
+        add(at(yr, 3, 15), `Slips still missing for ${taxYear}`, `Still to add: ${list}. Ask the issuer, or check CRA My Account.`);
+      }
+      if (opts.gst && opts.gst.registered){
+        if (opts.gst.freq === 'quarterly') [[4,30,'January to March'],[7,31,'April to June'],[10,31,'July to September'],[1,31,'October to December']].forEach(([m, d, q]) => add(at(yr, m, d - 7), 'GST/HST return due in a week', `Your GST/HST return and payment for ${q} are due ${new Date(yr, m - 1, d).toLocaleDateString('en-CA',{month:'long',day:'numeric'})}.`));
+        else { add(at(yr, 4, 23), 'GST/HST payment due April 30', `Pay any GST/HST owing for ${taxYear} by April 30. The return itself is due June 15.`); add(at(yr, 6, 8), 'GST/HST return due June 15', `File your ${taxYear} GST/HST return by June 15. TaxKeep's worksheet has the numbers.`); }
+      }
       if (opts.monthly){
         for (let m = 1; m <= 12; m++) add(at(yr, m, 1, 18), 'Any new receipts?', 'Take a minute to snap last month\'s receipts into TaxKeep.');
       }

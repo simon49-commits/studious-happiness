@@ -12,6 +12,7 @@
 <script src="jspdf.umd.min.js"></script>
 <script src="jspdf.plugin.autotable.min.js"></script>
 <script src="forms.js"></script>
+<script src="estimate.js"></script>
 <script>
 /* App shim: TaxKeep's export asks for a "downloads" capability. In the Android app,
    that is provided by saving the ZIP to the app's cache and opening Android's share sheet. */
@@ -174,6 +175,8 @@ header{padding-top:max(16px,env(safe-area-inset-top))}
 .wt td.ln{color:var(--brand);font-weight:700;white-space:nowrap;width:1%;padding-right:8px}.wt td.am{text-align:right;white-space:nowrap;font-weight:600}
 .wt tr.strong td{font-weight:700;border-top:2px solid var(--line)}.wt .src{display:block;color:var(--muted);font-size:11.5px}
 .slipbox{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.slipbox label.f{font-size:12px}
+.est{border-radius:18px;padding:18px;color:#fff;background:var(--brand);margin-bottom:12px;cursor:pointer}.est.owe{background:#9a3412}
+.est .big{font-size:30px;font-weight:800;margin:4px 0}.est .sm{opacity:.85;font-size:13px}
 .tag{display:inline-block;background:var(--brand2);color:var(--brand);font-weight:700;border-radius:7px;padding:2px 7px;font-size:12px;margin-right:6px}
 </style>
 </head>
@@ -330,7 +333,8 @@ function defaultState(){
   return { v:1, profile:{ name:'', year:new Date().getFullYear(), selfEmployed:false, province:'MB' },
     answers:{}, docsDone:{}, room:{ rrspLimit:'', tfsaRoom:'', fhsaOpen:false, fhsaCarry:'', fhsaPrior:'', contribs:[] },
     income:[], mileage:[], totalKm:{}, setAsidePct:25, lastExport:0,
-    reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{}, slips:[] };
+    reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{}, slips:[],
+    gst:{ registered:false, freq:'annual' }, homeOffice:null, household:{ spouse:false, spouseName:'', spouseNet:'', kids:'', medicalBy:'auto' }, noa:{} };
 }
 let formsSeg = 'slips';
 let store, state = defaultState(), receipts = [], tab = 'home', filter = 'all', dl = null, cloudOK = null, incomeShowAll = false, remStatus = '';
@@ -344,6 +348,7 @@ function mergeState(s){
   const m = {...d, ...s, profile:{...d.profile, ...(s.profile||{})}, room:{...d.room, ...(s.room||{})}, reminders:{...d.reminders, ...(s.reminders||{})}, waitlist:{...(s.waitlist||{})}};
   m.income = (m.income || []).map(x => x.type ? x : {...x, type:'self'});
   m.slips = Array.isArray(m.slips) ? m.slips : [];
+  m.gst = {...d.gst, ...(s.gst||{})}; m.household = {...d.household, ...(s.household||{})}; m.noa = {...(s.noa||{})};
   return m;
 }
 async function loadAll(){
@@ -397,6 +402,9 @@ function alerts(){
     const n = nextInstalment(); out.push(['info', `Next CRA instalment date: ${n.toLocaleDateString('en-CA',{month:'long',day:'numeric',year:'numeric'})} (only if CRA asked you to pay instalments).`, 'income']);
     if (!state.mileage.some(m => m.year === Y())) out.push(['warn', 'No business trips logged this year. CRA expects a mileage log to claim vehicle costs.', 'income']);
   }
+  const mo = new Date().getMonth();
+  if (mo >= 1 && mo <= 3 && Y() === new Date().getFullYear() - 1){ const miss = reqDocs().filter(d => TaxKeepForms.DOC_SLIPS[d.key] && !state.docsDone[d.key]); if (miss.length) out.push(['warn', `Still missing for ${Y()}: ${miss.map(d => d.label).join(', ')}.`, 'checklist']); }
+  if (state.profile.selfEmployed && !state.gst.registered){ const k = gigKind(); if (k.ride) out.push(['bad', 'Rideshare income: you must be registered for GST/HST from your first fare.', 'income']); else if (last4qIncome() >= 30000) out.push(['bad', `${money(last4qIncome())} of business income in 12 months: you're over the $30,000 GST/HST limit and must register.`, 'income']); }
   if (store && store.kind !== 'cloud' && receipts.length && (!state.lastExport || Date.now() - state.lastExport > 60 * 864e5)) out.push(['warn', 'Your records live only on this device. Export a backup copy so a lost phone doesn’t mean lost receipts.', 'more']);
   if (store && store.kind === 'memory') out.push(['bad', 'This device blocked on-device storage, so nothing will be kept after you close the app.', 'more']);
   return out;
@@ -425,7 +433,7 @@ function render(){
   if (tab === 'receipts' || (tab === 'checklist' && formsSeg === 'slips')) loadThumbs();
 }
 function yearPicker(){
-  const y = new Date().getFullYear(), ys = [y - 2, y - 1, y];
+  const y = new Date().getFullYear(), ys = [y - 6, y - 5, y - 4, y - 3, y - 2, y - 1, y].filter(x => x >= y - 6);
   return `<select data-act="year" style="width:auto;padding:6px 10px">${ys.map(x => `<option ${x === Y() ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
 }
 function vHome(){
@@ -442,6 +450,7 @@ function vHome(){
     <button data-act="addSlip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 8h8M8 12h3M13 12h3M8 16h3M13 16h3"/></svg>Add slip</button>
     <button data-tab="more"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>Export</button>
   </div>
+  ${(() => { const e = runEstimate(); return e && !e.empty ? `<div class="est ${e.result < 0 ? 'owe' : ''}" data-act="goEst"><div class="sm">${e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing'} for ${Y()}</div><div class="big">${money(Math.abs(e.result))}</div><div class="sm">${e.provIncluded ? '' : 'Federal only · '}Tap to see how it adds up</div></div>` : ''; })()}
   ${!receipts.length && !state.income.length && !Object.keys(state.answers).length ? `<div class="card"><h3>Welcome to TaxKeep</h3><p class="muted small">Snap receipts all year, log your income, answer a few questions, and hand your preparer a clean package in tax season.</p><div class="row"><button class="btn" data-tab="checklist">Start the checklist</button><button class="btn sec" data-act="demo">Try with sample data</button></div></div>` : ''}
   <div class="grid2">
     <div class="card stat"><div class="n">${money(sum(rs.map(r => r.amount)))}</div><div class="l">${rs.length} receipt${rs.length === 1 ? '' : 's'} in ${Y()}</div></div>
@@ -466,6 +475,8 @@ function vReceipts(){
       <div class="grow"><div class="ell"><b>${esc(r.vendor || 'Receipt')}</b></div><div class="small muted ell">${esc(r.date)} · ${esc(catLabel(r.category))}</div></div>
       <div class="amt">${money(r.amount)}</div></div>`).join('') : `<div class="empty">No receipts ${filter === 'all' ? 'for ' + Y() : 'in this category'} yet.<br>Tap <b>+ Add receipt</b> to snap or upload one.</div>`}
   </div>
+  <div class="card"><h3>Find receipts in a bank or card statement</h3><p class="small muted">Download your statement as a CSV file from your bank's website. TaxKeep picks out pharmacy, dental, daycare, donation${state.profile.selfEmployed ? ' and business' : ''} purchases for you to add.</p>
+    <label class="btn sec block" style="display:block;text-align:center">Import statement (CSV)<input type="file" id="stmtIn" accept=".csv,text/csv,text/plain" hidden></label></div>
   <button class="btn fab" data-act="add">+ Add receipt</button>`;
 }
 async function loadThumbs(){
@@ -476,8 +487,8 @@ async function loadThumbs(){
   }
 }
 function vForms(){
-  const seg = `<div class="seg" style="margin-bottom:12px">${[['slips','Slips'],['work','Worksheets'],['list','Checklist']].map(([k, l]) => `<button data-seg="${k}" class="${formsSeg === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
-  return `<div class="row between"><h2>Tax forms</h2>${yearPicker()}</div>${seg}` + (formsSeg === 'work' ? vWorksheets() : formsSeg === 'list' ? vChecklist() : vSlips());
+  const seg = `<div class="seg" style="margin-bottom:12px">${[['slips','Slips'],['est','Estimate'],['work','Worksheets'],['list','Checklist']].map(([k, l]) => `<button data-seg="${k}" class="${formsSeg === k ? 'on' : ''}">${l}</button>`).join('')}</div>`;
+  return `<div class="row between"><h2>Tax forms</h2>${yearPicker()}</div>${seg}` + (formsSeg === 'work' ? vWorksheets() : formsSeg === 'list' ? vChecklist() : formsSeg === 'est' ? vEstimate() : vSlips());
 }
 function slipKey(s){ const F = TaxKeepForms, d = F.SLIP_TYPES[s.type] || F.SLIP_TYPES.OTHER, b = d.boxes.find(x => x[3] !== 'count' && x[3] !== 'info') || d.boxes[0]; return { code:b[0], label:b[1], amt:num((s.boxes || {})[b[0]]) }; }
 function vSlips(){
@@ -499,6 +510,8 @@ function vWorksheets(){
   return `
   <div class="card"><h3>Worksheets for your preparer</h3><p class="small muted">Your slips, receipts and income, sorted by the line they go on. Your preparer can work straight from this.</p>
     <button class="btn block" data-act="wsPdf" ${dl ? '' : 'disabled'}>Save or send ${Y()} worksheets (PDF)</button></div>
+  <div class="card"><div class="row between"><h3>Home office</h3><button class="btn sec" data-act="homeOffice">${state.homeOffice ? 'Edit' : 'Set up'}</button></div>
+    <p class="small muted" style="margin:0">${(() => { const h = TaxKeepForms.homeOfficeCalc(state.homeOffice); return h ? `${Math.round(h.pct * 100)}% of your home · ${money(h.total)} to claim (${h.emp ? 'employee, T777' : 'self-employed, T2125'})` : 'Worked from home for your employer (with a T2200), or run your business from home? Enter your space and costs once.'; })()}</p></div>
   ${shown.length ? shown.map(s => `<div class="card ws"><h3>${esc(s.title)}</h3><div class="form">${esc(s.form)}</div>
     ${s.rows && s.rows.length ? `<table class="wt">${s.rows.map(row).join('')}</table>` : ''}
     ${s.rows2 && s.rows2.length ? `<p class="small" style="margin:10px 0 2px"><b>${esc(s.rows2Title)}</b></p><table class="wt">${s.rows2.map(row).join('')}</table>` : ''}
@@ -510,13 +523,89 @@ function vWorksheets(){
 }
 function worksheetSections(){
   return TaxKeepForms.build({ year:Y(), slips:state.slips, receipts, income:state.income, contribs:state.room.contribs, selfEmployed:state.profile.selfEmployed,
-    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel });
+    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel, gst:state.gst, homeOffice:state.homeOffice });
 }
-function worksheetPdf(){ return TaxKeepForms.pdf(worksheetSections(), { year:Y(), name:state.profile.name, province:state.profile.province, date:today() }); }
+function worksheetPdf(){ return TaxKeepForms.pdf(worksheetSections().concat(estimateSection()), { year:Y(), name:state.profile.name, province:state.profile.province, date:today() }); }
 async function saveWorksheets(){
   if (!dl){ toast('Saving isn\'t available on this device.'); return; }
   try { const blob = worksheetPdf(); await dl.save({ filename:`TaxKeep_${Y()}_worksheets.pdf`, data:blob }); toast('Worksheets ready'); }
   catch(e){ toast(e && e.code === 'declined' ? 'Cancelled' : 'Could not make the PDF: ' + (e && (e.message || e.code) || 'error')); }
+}
+/* ---------------- refund estimate ---------------- */
+function slipSum(type, box){ return sum(yearSlips().filter(s => s.type === type).map(s => (s.boxes || {})[box])); }
+function hasSlip(...types){ return yearSlips().some(s => types.includes(s.type)); }
+function spouseClaims(kind, myNet){
+  const h = state.household; if (!h.spouse || h.spouseNet === '') return false;
+  if (kind === 'medical'){ if (h.medicalBy === 'me') return false; if (h.medicalBy === 'spouse') return true; }
+  return num(h.spouseNet) < myNet; // medical (auto) and child care go to the lower-income spouse
+}
+function estimateInputs(secs){
+  secs = secs || worksheetSections();
+  const row = (id, line) => { const sc = secs.find(x => x.id === id); const r = sc && (sc.rows || []).find(x => x.line === line); return r ? num(r.amount) : 0; };
+  const yi = state.income.filter(x => x.year === Y()), logged = t => sum(yi.filter(x => x.type === t).map(x => x.amount));
+  const t2125 = secs.find(x => x.id === 't2125');
+  const selfNet = t2125 ? row('t2125', '9946') : slipSum('T4A', '020') + slipSum('T4A', '048');
+  const rrspLimit = state.room.rrspLimit !== '' ? num(state.room.rrspLimit) : Infinity;
+  const noa = state.noa && state.noa.forYear === Y() ? state.noa : {};
+  return {
+    year: Y(), province: state.profile.province, selfNet,
+    emp: { income: hasSlip('T4') ? slipSum('T4', '14') : logged('employment'), cpp: slipSum('T4', '16'), cpp2: slipSum('T4', '16A'), ei: slipSum('T4', '18') },
+    other: { pension: slipSum('T4A', '016') + slipSum('T4A', '024'), oas: slipSum('T4AOAS', '18'), cppBen: slipSum('T4AP', '20'),
+      ei: slipSum('T4E', '14') + (hasSlip('T4E', 'T4AP', 'T4AOAS', 'T4A') ? 0 : logged('benefits')),
+      interest: slipSum('T5', '13') + (hasSlip('T5', 'T3') ? 0 : logged('invest')),
+      eligDivTaxable: slipSum('T5', '25') + slipSum('T3', '50'), otherDivTaxable: slipSum('T5', '11') + slipSum('T3', '32'),
+      capGains: slipSum('T5', '18') + slipSum('T3', '21'), rrspIncome: slipSum('T4RSP', '16') + slipSum('T4RSP', '22'),
+      other: slipSum('T4A', '018') + slipSum('T4A', '028') + slipSum('T3', '26') + logged('other'),
+      scholarship: hasSlip('T2202') ? 0 : Math.max(0, slipSum('T4A', '105') - 500), rental: logged('rental'),
+      wcb: slipSum('T5007', '10'), social: slipSum('T5007', '11') },
+    deductions: { rpp: row('deductions', '20700'), rrsp: Math.min(row('deductions', '20800'), rrspLimit), fhsa: row('deductions', '20805'), dues: row('deductions', '21200'),
+      childcare: row('deductions', '21400'), moving: row('deductions', '21900'), employmentExp: row('deductions', '22900') },
+    credits: { medical: row('credits', '33099'), donations: row('credits', '34900'), tuition: row('credits', '32300'), tuitionCarry: num(noa.tuitionCarry), accessibility: row('credits', '31285') },
+    taxPaid: sum(((secs.find(x => x.id === 'tax') || {}).rows || []).map(r => r.amount))
+  };
+}
+function runEstimate(){
+  if (!window.TaxKeepEstimate) return null;
+  const secs = worksheetSections(), x = estimateInputs(secs);
+  let e = TaxKeepEstimate.estimate(x); const moved = [];
+  // Household: medical and child care are usually better on the lower-income spouse's return.
+  if (x.credits.medical && spouseClaims('medical', e.net)){ moved.push(['Medical expenses', x.credits.medical]); x.credits.medical = 0; }
+  if (x.deductions.childcare && spouseClaims('childcare', e.net)){ moved.push(['Child care', x.deductions.childcare]); x.deductions.childcare = 0; }
+  if (moved.length) e = TaxKeepEstimate.estimate(x);
+  e.moved = moved; e.inputs = x;
+  e.empty = !e.income && !e.paid;
+  return e;
+}
+function estimateSection(){
+  const e = runEstimate(); if (!e || e.empty) return [];
+  return [{ id:'estimate', title:'Refund estimate (planning only)', form:`Federal${e.provIncluded ? ' + Manitoba' : ''} tax, ${e.year} rates`,
+    rows: e.steps.map(([l, v]) => ({ line:'', label:l, amount:v, src:'' })).concat([{ line:'', label: e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing', amount: Math.abs(e.result), src:'', strong:true }]),
+    notes:['Leaves out refundable credits (Canada Workers Benefit, Manitoba credits), the GST/HST credit and Canada Child Benefit.'], empty:false }];
+}
+function vEstimate(){
+  const e = runEstimate();
+  if (!e || e.empty) return `<div class="empty">Add your slips or income for ${Y()} and TaxKeep estimates your refund here.</div>`;
+  const tips = [];
+  const h = state.household;
+  if (h.spouse && h.spouseNet !== '' && e.inputs.credits.medical + (e.moved.find(m => m[0] === 'Medical expenses') || [0, 0])[1] > 0){
+    const med = e.inputs.credits.medical || (e.moved.find(m => m[0] === 'Medical expenses') || [0, 0])[1];
+    const mine = TaxKeepEstimate.medicalThreshold(Y(), e.net, state.profile.province), theirs = TaxKeepEstimate.medicalThreshold(Y(), num(h.spouseNet), state.profile.province);
+    const better = mine.fed <= theirs.fed ? 'you' : (h.spouseName || 'your spouse');
+    tips.push(`Medical: claim the family's ${money(med)} on ${better === 'you' ? 'your' : esc(better) + '\'s'} return. The 3% threshold is ${money(Math.min(mine.fed, theirs.fed))} there vs ${money(Math.max(mine.fed, theirs.fed))}.`);
+  }
+  if (h.spouse && e.inputs.credits.donations > 0) tips.push('Donations: put both of your receipts on one return. Only the first $200 a year gets the low rate, so pooling gets more at the higher rate.');
+  if (e.moved.some(m => m[0] === 'Child care')) tips.push('Child care usually has to be claimed by the lower-income spouse, so it\'s left off your estimate.');
+  const R = room(); if (R.rr.set && R.rr.left > 500) tips.push(`RRSP: you have ${money(R.rr.left)} of room. Each $1,000 you put in would cut your tax by about ${money(1000 * e.marginal)} at your ${Math.round(e.marginal * 1000) / 10}% rate.`);
+  if (state.profile.selfEmployed && e.seCpp > 0) tips.push(`Self-employed: ${money(e.seCpp)} of this is CPP on your business income (you pay both halves).`);
+  return `
+  <div class="est ${e.result < 0 ? 'owe' : ''}"><div class="sm">${e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing'} for ${Y()}</div><div class="big">${money(Math.abs(e.result))}</div>
+    <div class="sm">${e.provIncluded ? 'Federal + Manitoba' : 'Federal only'} · ${e.year} rates${e.yearNote ? ' (' + esc(e.yearNote) + ')' : ''}</div></div>
+  ${!e.provIncluded ? `<div class="alert warn">Provincial tax for ${esc(state.profile.province)} isn't in TaxKeep yet, so this shows federal tax only. Your real result will be lower.</div>` : ''}
+  <div class="card"><h3>How it adds up</h3><table class="wt">${e.steps.map(([l, v]) => `<tr><td>${esc(l)}</td><td class="am">${v < 0 ? '−' + money(-v) : money(v)}</td></tr>`).join('')}
+    <tr class="strong"><td>${e.result >= 0 ? 'Refund' : 'Balance owing'}</td><td class="am">${money(Math.abs(e.result))}</td></tr></table>
+    ${e.moved.length ? `<p class="small muted" style="margin:8px 0 0">Left for ${esc(state.household.spouseName || 'your spouse')}'s return: ${e.moved.map(m => esc(m[0]) + ' ' + money(m[1])).join(', ')}.</p>` : ''}</div>
+  ${tips.length ? `<div class="card"><h3>Ways to keep more</h3>${tips.map(t => `<div class="alert info">${t}</div>`).join('')}</div>` : ''}
+  <p class="disc">An estimate from what's in TaxKeep, for planning. It leaves out refundable credits (Canada Workers Benefit, Manitoba credits), the GST/HST credit and child benefits, and anything not entered. Your preparer's return is the real number.</p>`;
 }
 function vChecklist(){
   const docs = reqDocs(), answered = QUESTIONS.filter(q => state.answers[q.id]).length;
@@ -542,6 +631,7 @@ function vAccounts(){
   <div class="card"><h3>RRSP</h3>
     <label class="f">Your RRSP deduction limit for ${Y()} (from your Notice of Assessment or CRA My Account)</label>
     <input type="number" inputmode="decimal" data-room="rrspLimit" value="${esc(state.room.rrspLimit)}" placeholder="e.g. 12500">
+    <label class="btn ghost block" style="display:block;text-align:center;margin:8px 0">📷 Read it from my Notice of Assessment<input type="file" id="noaIn" accept="image/*" hidden></label>
     ${meter('RRSP', R.rr, R.rr.set, 'Enter your limit to track your room.', R.rr.over > 0 ? `<div class="alert ${R.rr.penal > 0 ? 'bad' : 'warn'}" style="margin-top:8px">${R.rr.penal > 0 ? 'Over the $2,000 buffer: CRA charges 1% a month on the excess.' : 'Within the $2,000 over-contribution buffer.'}</div>` : '')}
   </div>
   <div class="card"><h3>TFSA</h3>
@@ -586,6 +676,23 @@ function vIncome(){
   </div>
   ${state.profile.selfEmployed ? vBusinessParts() : `<p class="disc">Self-employed or doing gig work? Add a "Self-employed / gig" income entry, or turn it on in More → Profile, to get expense, mileage and set-aside tools.</p>`}`;
 }
+function gigKind(){
+  const yi = state.income.filter(x => x.type === 'self'), txt = yi.map(x => x.client || '').join(' | ');
+  return { ride: /\buber\b(?! ?eats)|lyft|taxi|rideshare|ride share/i.test(txt), delivery: /uber ?eats|doordash|skip|instacart|delivery/i.test(txt) };
+}
+function last4qIncome(){ const cut = new Date(); cut.setFullYear(cut.getFullYear() - 1); const c = `${cut.getFullYear()}-${String(cut.getMonth() + 1).padStart(2, '0')}-01`; return sum(state.income.filter(x => x.type === 'self' && (x.date || '') >= c).map(x => x.amount)); }
+function gstCard(){
+  const g = state.gst, k = gigKind(), sec = worksheetSections().find(x => x.id === 'gst');
+  const net = sec ? sec.rows.find(r => r.line === '109') : null;
+  return `<div class="card"><h3>GST/HST</h3>
+    ${!g.registered && k.ride ? '<div class="alert bad">Rideshare drivers must register for GST/HST from their first fare. The $30,000 small-supplier limit doesn\'t apply to rideshare.</div>' : ''}
+    ${!g.registered && !k.ride && last4qIncome() >= 25000 ? `<div class="alert warn">${money(last4qIncome())} in the last 12 months. Once you pass $30,000 in four quarters in a row you must register for GST/HST.</div>` : ''}
+    <div class="toggle"><span>I'm registered for GST/HST</span><input type="checkbox" data-gst="registered" ${g.registered ? 'checked' : ''}></div>
+    ${g.registered ? `<label class="f">How often do you file?</label><select data-gst="freq"><option value="annual" ${g.freq === 'annual' ? 'selected' : ''}>Once a year</option><option value="quarterly" ${g.freq === 'quarterly' ? 'selected' : ''}>Every quarter</option></select>
+      ${net ? `<p style="margin:10px 0 4px">${net.amount >= 0 ? 'Owing' : 'Refund'} for ${Y()} so far: <b>${money(Math.abs(net.amount))}</b></p>` : ''}
+      <button class="btn sec" data-act="goGst">See the GST/HST worksheet</button>` : '<p class="small muted">Turn this on if you have a GST/HST number. TaxKeep then works out your return from your income and receipts.</p>'}
+  </div>`;
+}
 function vBusinessParts(){
   const B = biz(), n = nextInstalment();
   return `
@@ -601,6 +708,7 @@ function vBusinessParts(){
     <p>Put aside about <b>${money(B.setAside)}</b> of your ${money(Math.max(0, B.net))} net income.</p>
     <p class="small muted">You pick the %. Self-employed people also pay both halves of CPP, so ask your preparer what % fits you. Next instalment date: ${n.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}. Balance owing is due April 30; your return is due June 15.</p>
   </div>
+  ${gstCard()}
   <div class="card"><div class="row between"><h3>Mileage log</h3><button class="btn sec" data-act="addTrip">+ Trip</button></div>
     <label class="f">Total km driven in ${Y()} (odometer end minus start)</label>
     <input type="number" data-totalkm value="${esc(state.totalKm[Y()] || '')}" placeholder="e.g. 18000">
@@ -608,6 +716,17 @@ function vBusinessParts(){
     <div class="list">${B.mil.length ? B.mil.sort((a, b) => b.date.localeCompare(a.date)).map(x => `<div class="item" data-deltrip="${x.id}"><div class="grow"><b>${esc(x.purpose || 'Trip')}</b><div class="small muted">${esc(x.date)} · tap to remove</div></div><div class="amt">${num(x.km)} km</div></div>`).join('') : '<div class="empty small">No trips yet.</div>'}</div>
   </div>
   <p class="disc">Meals count at 50%. Estimates are for planning only; your preparer makes the final numbers.</p>`;
+}
+function pastYearsCard(){
+  const now = new Date().getFullYear(), yrs = {};
+  receipts.forEach(r => { const y = +String(r.date || '').slice(0, 4); if (y) (yrs[y] = yrs[y] || { r:0, s:0, i:0 }).r++; });
+  state.slips.forEach(x => { (yrs[x.year] = yrs[x.year] || { r:0, s:0, i:0 }).s++; });
+  state.income.forEach(x => { (yrs[x.year] = yrs[x.year] || { r:0, s:0, i:0 }).i++; });
+  const list = Object.keys(yrs).map(Number).filter(y => y < now).sort((a, b) => b - a);
+  if (!list.length) return '';
+  return `<div class="card"><h3>Past years</h3><div class="list">${list.map(y => `<div class="item" data-year="${y}"><div class="grow"><b>${y}</b><div class="small muted">${[yrs[y].r && yrs[y].r + ' receipts', yrs[y].s && yrs[y].s + ' slips', yrs[y].i && yrs[y].i + ' income entries'].filter(Boolean).join(' · ')}</div></div>
+    <div class="small ${y + 6 < now ? '' : 'muted'}">${y + 6 < now ? 'OK to delete' : 'Keep until ' + (y + 7)}</div></div>`).join('')}</div>
+    <p class="small muted">CRA can ask for records for 6 years after the year they're for.</p></div>`;
 }
 function vMore(){
   const mode = store ? store.kind : 'device';
@@ -638,6 +757,14 @@ function vMore(){
     ${remStatus ? `<p class="small muted">${esc(remStatus)}</p>` : ''}
     <button class="btn sec" data-act="testRem" style="margin-top:6px">Send a test reminder</button>
   </div>
+  <div class="card"><h3>Household</h3>
+    <div class="toggle"><span>I have a spouse or common-law partner</span><input type="checkbox" data-hh="spouse" ${state.household.spouse ? 'checked' : ''}></div>
+    ${state.household.spouse ? `<div class="grid2"><div><label class="f">Their first name</label><input type="text" data-hh="spouseName" value="${esc(state.household.spouseName)}"></div>
+      <div><label class="f">Their net income (estimate)</label><input type="number" inputmode="decimal" data-hh="spouseNet" value="${esc(state.household.spouseNet)}" placeholder="e.g. 38000"></div></div>
+      <label class="f">Medical expenses go on</label><select data-hh="medicalBy"><option value="auto" ${state.household.medicalBy === 'auto' ? 'selected' : ''}>Whoever saves more (lower income)</option><option value="me" ${state.household.medicalBy === 'me' ? 'selected' : ''}>My return</option><option value="spouse" ${state.household.medicalBy === 'spouse' ? 'selected' : ''}>Their return</option></select>` : ''}
+    <label class="f">Children (first names, comma-separated)</label><input type="text" data-hh="kids" value="${esc(state.household.kids)}" placeholder="Optional">
+    <p class="small muted">Lets you mark whose receipt it is and tells you which return each claim saves the most on.</p></div>
+  ${pastYearsCard()}
   <div class="card"><h3>Profile</h3>
     <label class="f">First name</label><input type="text" data-prof="name" value="${esc(state.profile.name)}" placeholder="Optional">
     <label class="f">Province</label><select data-prof="province">${['AB','BC','MB','NB','NL','NS','NT','NU','ON','PE','QC','SK','YT'].map(p => `<option ${p === state.profile.province ? 'selected' : ''}>${p}</option>`).join('')}</select>
@@ -655,6 +782,12 @@ function confirmSheet(title, body, okLabel, onOk){
   $('#okBtn').onclick = async () => { closeSheet(); await onOk(); };
 }
 let pendingFile = null;
+function whoOptions(){
+  const h = state.household, o = [['me', 'Me']];
+  if (h.spouse) o.push(['spouse', h.spouseName || 'Spouse / partner']);
+  String(h.kids || '').split(',').map(k => k.trim()).filter(Boolean).forEach(k => o.push(['kid:' + k, k]));
+  return o;
+}
 function receiptForm(r){
   pendingFile = null;
   const cats = state.profile.selfEmployed ? [['Personal credits', PERSONAL], ['Business (T2125)', BUSINESS]] : [['Personal credits', PERSONAL]];
@@ -666,6 +799,8 @@ function receiptForm(r){
     <div class="grid2"><div><label class="f">Date</label><input type="date" id="fDate" value="${esc(r ? r.date : today())}"></div>
     <div><label class="f">Amount ($)</label><input type="number" inputmode="decimal" step="0.01" id="fAmt" value="${r ? esc(r.amount) : ''}" placeholder="0.00"></div></div>
     <label class="f">Category</label><select id="fCat">${cats.map(([g, l]) => `<optgroup label="${g}">${l.map(([k, n]) => `<option value="${k}" ${r && r.category === k ? 'selected' : ''}>${esc(n)}</option>`).join('')}</optgroup>`).join('')}</select>
+    ${whoOptions().length > 1 ? `<label class="f">Whose expense?</label><select id="fWho">${whoOptions().map(([k, l]) => `<option value="${esc(k)}" ${r && r.who === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>` : ''}
+    ${state.gst.registered ? `<div id="fGstRow"><label class="f">GST/HST on this receipt ($, optional)</label><input type="number" inputmode="decimal" step="0.01" id="fGst" value="${r && r.gst != null ? esc(r.gst) : ''}" placeholder="Leave blank and TaxKeep estimates it"></div>` : ''}
     <label class="f">Note (optional)</label><textarea id="fNote" placeholder="Who it was for, what it covered…">${esc(r ? r.note : '')}</textarea>
     <div class="row" style="margin-top:14px">${r ? `<button class="btn danger" data-delreceipt="${r.id}">Delete</button>` : ''}<button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="saveR">Save</button></div>`);
   const fi = $('#fileIn');
@@ -683,13 +818,16 @@ function receiptForm(r){
     } catch(e){ $('#dropTxt').textContent = 'Could not read that file.'; }
     window.__tkPauseLock = false;
   };
-  $('#fCat').addEventListener('change', () => { $('#fCat').dataset.touched = '1'; });
+  const gstVis = () => { if ($('#fGstRow')) $('#fGstRow').style.display = isBiz($('#fCat').value) ? '' : 'none'; };
+  $('#fCat').addEventListener('change', () => { $('#fCat').dataset.touched = '1'; gstVis(); }); gstVis();
   if (!r && window.TaxKeepOCR) TaxKeepOCR.warmUp();
   $('#saveR').onclick = async () => {
     const amt = num($('#fAmt').value), date = $('#fDate').value;
     if (!date){ toast('Add a date'); return; }
     const m = r ? {...r} : { id:newId(), hasFile:false, created:Date.now() };
     Object.assign(m, { vendor:$('#fVendor').value.trim(), date, amount:amt, category:$('#fCat').value, note:$('#fNote').value.trim() });
+    if ($('#fWho')) m.who = $('#fWho').value;
+    if ($('#fGst')) m.gst = $('#fGst').value === '' ? null : num($('#fGst').value);
     $('#saveR').disabled = true;
     try {
       if (pendingFile){ await store.putFile(m.id, pendingFile); m.hasFile = true; m.fileType = pendingFile.type; m.fileName = pendingFile.name; }
@@ -709,7 +847,7 @@ function autoFill(dataUrl){
     if (r.vendor && !$('#fVendor').value.trim()){ $('#fVendor').value = r.vendor; got.push('store'); }
     if (r.date && (!$('#fDate').value || $('#fDate').value === today())){ $('#fDate').value = r.date; got.push('date'); }
     if (r.total && !$('#fAmt').value){ $('#fAmt').value = r.total.toFixed(2); got.push('total'); }
-    if (r.category && !$('#fCat').dataset.touched && $('#fCat').querySelector(`option[value="${r.category}"]`)){ $('#fCat').value = r.category; got.push('category'); }
+    if (r.category && !$('#fCat').dataset.touched && $('#fCat').querySelector(`option[value="${r.category}"]`)){ $('#fCat').value = r.category; got.push('category'); if ($('#fGstRow')) $('#fGstRow').style.display = isBiz(r.category) ? '' : 'none'; }
     box.className = got.length ? 'scan ok' : 'scan warn';
     box.textContent = got.length ? `✓ Filled in the ${got.join(', ')} from your photo. Please check them.` : 'Couldn\'t read this receipt clearly. Please fill it in.';
   }).catch(() => { if (box.isConnected){ box.className = 'scan warn'; box.textContent = 'Couldn\'t read this receipt. Please fill it in.'; } });
@@ -789,6 +927,7 @@ function slipForm(x){
       if (yr !== Y()) state.profile.year = yr;
       persist(); closeSheet(); tab = 'checklist'; formsSeg = 'slips'; render();
       toast(ticked ? 'Saved and ticked off your checklist' : 'Saved');
+      if (state.reminders.on) syncReminders();
     } catch(e){ $('#sSave').disabled = false; toast('Could not save: ' + (e && (e.message || e.code) || 'error')); }
   };
 }
@@ -806,6 +945,126 @@ function readSlipPhoto(dataUrl){
     box.className = n ? 'scan ok' : 'scan warn';
     box.textContent = n ? `✓ Read ${n} box${n > 1 ? 'es' : ''}${guess ? ' from your ' + F.short(guess) : ''}. Check every number against the slip.` : `Couldn't read the boxes clearly${guess ? ' (looks like a ' + F.short(guess) + ')' : ''}. Please type them in.`;
   }).catch(() => { if (box.isConnected){ box.className = 'scan warn'; box.textContent = 'Couldn\'t read this slip. Please type the boxes in.'; } });
+}
+
+/* ---------------- notice of assessment ---------------- */
+function parseNOA(text){
+  const flat = text.replace(/\r/g, '');
+  const amt = '(\\d{1,3}(?:[ ,]\\d{3})*\\.\\d{2}|\\d+\\.\\d{2})', toN = v => parseFloat(String(v).replace(/[ ,]/g, ''));
+  const near = (re, span) => { const m = flat.match(re); if (!m) return null; const after = flat.slice(m.index, m.index + (span || 220)); const a = after.match(new RegExp(amt)); return a ? toN(a[1]) : null; };
+  const yearM = flat.match(/RRSP deduction limit (?:for )?(20\d\d)/i) || flat.match(/deduction limit[^\n]{0,40}(20\d\d)/i);
+  const tax = flat.match(/notice of (?:re)?assessment[\s\S]{0,200}?(20\d\d)/i) || flat.match(/tax year[^\d]{0,10}(20\d\d)/i);
+  return { limitYear: yearM ? +yearM[1] : (tax ? +tax[1] + 1 : null), rrspLimit: near(/RRSP deduction limit/i), unused: near(/unused RRSP[^\n]{0,30}contribution/i),
+    tuitionCarry: near(/(?:unused|carry ?forward)[^\n]{0,60}tuition|tuition[^\n]{0,60}(?:carry ?forward|available)/i) };
+}
+async function readNOA(file){
+  if (!window.TaxKeepOCR || !TaxKeepOCR.readText){ toast('The reader isn\'t available.'); return; }
+  openSheet(`<div class="empty"><span class="spin"></span><p id="ocrMsg">Reading your Notice of Assessment…</p></div>`);
+  window.__ocrProgress = p => { const m = document.getElementById('ocrMsg'); if (m) m.textContent = `Reading your Notice of Assessment… ${Math.round(p * 100)}%`; };
+  let got = {};
+  try { const f = await readFile(file); got = parseNOA(await TaxKeepOCR.readText(f)); } catch(e){}
+  const yr = got.limitYear || Y();
+  openSheet(`<h3>From your Notice of Assessment</h3>
+    <div class="scan ${got.rrspLimit ? 'ok' : 'warn'}">${got.rrspLimit ? '✓ Found your RRSP limit. Check it against the notice.' : 'Couldn\'t find the RRSP limit clearly. Type it in from the notice.'}</div>
+    <div class="grid2"><div><label class="f">RRSP deduction limit for</label><input type="number" id="nYear" value="${yr}"></div>
+    <div><label class="f">Amount ($)</label><input type="number" inputmode="decimal" id="nLimit" value="${got.rrspLimit != null ? got.rrspLimit.toFixed(2) : ''}"></div></div>
+    <label class="f">Unused RRSP contributions available ($)</label><input type="number" inputmode="decimal" id="nUnused" value="${got.unused != null ? got.unused.toFixed(2) : ''}" placeholder="0.00">
+    <label class="f">Federal tuition amount to carry forward ($)</label><input type="number" inputmode="decimal" id="nTuition" value="${got.tuitionCarry != null ? got.tuitionCarry.toFixed(2) : ''}" placeholder="0.00">
+    <p class="small muted">The RRSP limit on the notice is for the next tax year. TaxKeep switches to that year for you.</p>
+    <div class="row" style="margin-top:14px"><button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="nSave">Use these</button></div>`);
+  $('#nSave').onclick = () => {
+    const y = Number($('#nYear').value) || Y(), lim = $('#nLimit').value;
+    state.profile.year = y; if (lim !== '') state.room.rrspLimit = String(num(lim));
+    state.noa = { forYear: y, rrspLimit: num(lim), unused: num($('#nUnused').value), tuitionCarry: num($('#nTuition').value) };
+    closeSheet(); persist(); tab = 'accounts'; render(); toast(`Saved for ${y}`);
+  };
+}
+
+/* ---------------- bank / card statements ---------------- */
+async function importStatement(file){
+  let rows; try { rows = parseCSV(await file.text()); } catch(e){ toast('Could not read that file.'); return; }
+  if (rows.length < 2){ toast('That file has no rows to import.'); return; }
+  // Some bank files have no header row: detect by whether row 0 has a date in it.
+  const hasHead = !rows[0].some(c => parseAnyDate(c));
+  const head = hasHead ? rows[0].map(h => String(h).trim()) : rows[0].map((_, i) => 'Column ' + (i + 1)), body = (hasHead ? rows.slice(1) : rows).slice(0, 5000);
+  const share = (c, f) => body.filter(r => f(r[c])).length / body.length;
+  const isDate = v => !!parseAnyDate(v), isNum = v => String(v || '').trim() !== '' && isFinite(parseMoney(v));
+  const dC = head.findIndex((h, k) => share(k, isDate) > .6);
+  const by = re => head.findIndex(h => re.test(h));
+  let debitC = by(/debit|withdraw|purchase|charges?$|money out/i), creditC = by(/credit|deposit|payment|money in/i), amtC = -1;
+  if (debitC < 0 || share(debitC, isNum) === 0){ debitC = -1; amtC = by(/amount|cad\$?|value/i); if (amtC < 0) for (let k = head.length - 1; k >= 0; k--) if (k !== dC && share(k, isNum) > .6){ amtC = k; break; } }
+  const textCols = head.map((_, k) => k).filter(k => k !== dC && k !== amtC && k !== debitC && k !== creditC && share(k, v => /[a-z]{3}/i.test(v || '')) > .5);
+  if (dC < 0 || (amtC < 0 && debitC < 0)){ toast('Couldn\'t find the date and amount columns in that file.'); return; }
+  // With one amount column, purchases are whichever sign most rows have (negative for bank accounts, positive for many card exports).
+  const negs = amtC >= 0 ? body.filter(r => parseMoney(r[amtC]) < 0).length : 0, purchNeg = amtC >= 0 && negs > body.length / 2;
+  const items = [];
+  body.forEach(r => {
+    const date = parseAnyDate(r[dC]); if (!date) return;
+    let a = debitC >= 0 ? parseMoney(r[debitC]) : parseMoney(r[amtC]); if (!isFinite(a) || !a) return;
+    if (debitC >= 0) a = Math.abs(a); else if (purchNeg){ if (a > 0) return; a = -a; } else { if (a < 0) return; }
+    const desc = textCols.map(k => String(r[k] || '').trim()).filter(Boolean).join(' ').replace(/\s+/g, ' ').slice(0, 60);
+    const cat = window.TaxKeepOCR ? TaxKeepOCR.guessCategory(desc, state.profile.selfEmployed) : null;
+    const key = ['stmt', date, a.toFixed(2), desc].join('|');
+    if (receipts.some(x => x.key === key)) return;
+    items.push({ date, amount: Math.round(a * 100) / 100, desc, cat, key, pick: !!cat && cat !== 'b_meals' });
+  });
+  const cats = state.profile.selfEmployed ? [...PERSONAL, ...BUSINESS] : PERSONAL;
+  let showAll = false;
+  const draw = () => {
+    const list = items.map((x, i) => [x, i]).filter(([x]) => showAll || x.cat);
+    $('#stList').innerHTML = list.length ? list.map(([x, i]) => `<div class="item" style="align-items:flex-start"><input type="checkbox" data-sti="${i}" ${x.pick ? 'checked' : ''} style="width:auto;margin-top:4px">
+      <div class="grow"><div class="ell"><b>${esc(x.desc || 'Purchase')}</b></div><div class="small muted">${x.date}</div>
+      <select data-stc="${i}" style="margin-top:4px;padding:5px 8px;font-size:13px"><option value="">Not deductible</option>${cats.map(([k, l]) => `<option value="${k}" ${x.cat === k ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></div><div class="amt">${money(x.amount)}</div></div>`).join('')
+      : '<div class="empty small">No likely tax-related purchases found. Tap "Show all purchases" to pick some yourself.</div>';
+    const n = items.filter(x => x.pick && x.cat).length; $('#stGo').textContent = `Add ${n} receipt${n === 1 ? '' : 's'}`; $('#stGo').disabled = !n;
+  };
+  openSheet(`<h3>Purchases that may count</h3><p class="small muted">${esc(file.name)} · ${items.length} purchases. Check the ones to add, and keep the real receipts, since CRA may ask for them.</p>
+    <label class="row small" style="margin-bottom:8px"><input type="checkbox" id="stAll" style="width:auto"> Show all purchases</label>
+    <div class="list" id="stList" style="max-height:52vh;overflow:auto"></div>
+    <div class="row" style="margin-top:14px"><button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="stGo">Add</button></div>`);
+  $('#stAll').onchange = e => { showAll = e.target.checked; draw(); };
+  $('#stList').onchange = e => { const t = e.target; if (t.dataset.sti != null) items[+t.dataset.sti].pick = t.checked; if (t.dataset.stc != null){ const x = items[+t.dataset.stc]; x.cat = t.value || null; x.pick = !!x.cat; } draw(); };
+  draw();
+  $('#stGo').onclick = async () => {
+    const pick = items.filter(x => x.pick && x.cat); $('#stGo').disabled = true;
+    for (const x of pick){ const m = { id:newId(), vendor:x.desc, date:x.date, amount:x.amount, category:x.cat, note:'From bank statement – keep the receipt', hasFile:false, created:Date.now(), key:x.key, fromStatement:true };
+      await store.putReceipt(m).catch(() => {}); receipts.push(m); }
+    receipts.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    const yrs = pick.map(x => +x.date.slice(0, 4)); if (yrs.length && !yrs.includes(Y())) state.profile.year = Math.max(...yrs);
+    closeSheet(); persist(); tab = 'receipts'; render(); toast(`Added ${pick.length} receipts`);
+  };
+}
+
+/* ---------------- home office ---------------- */
+function homeOfficeForm(){
+  const h = state.homeOffice || { kind: state.profile.selfEmployed ? 'self' : 'employee', area:'', total:'', shared:false, hours:'', months:12, commission:false, exp:{} };
+  const ex = [['rent','Rent'],['elec','Electricity'],['heat','Heat'],['water','Water'],['internet','Internet (monthly fees)'],['maint','Maintenance and minor repairs'],['insurance','Home insurance'],['proptax','Property taxes'],['mortgage','Mortgage interest']];
+  openSheet(`<h3>Home office</h3>
+    <label class="f">Who is it for?</label><select id="hKind"><option value="employee" ${h.kind !== 'self' ? 'selected' : ''}>My job (employer gave me a T2200)</option><option value="self" ${h.kind === 'self' ? 'selected' : ''}>My own business</option></select>
+    <label class="row small" id="hComRow" style="margin-top:8px"><input type="checkbox" id="hCom" ${h.commission ? 'checked' : ''} style="width:auto"> I earn commissions from my job</label>
+    <div class="grid2"><div><label class="f">Work space (sq ft)</label><input type="number" id="hArea" value="${esc(h.area)}" placeholder="e.g. 120"></div><div><label class="f">Whole home (sq ft)</label><input type="number" id="hTotal" value="${esc(h.total)}" placeholder="e.g. 1100"></div></div>
+    <label class="row small" style="margin-top:8px"><input type="checkbox" id="hShared" ${h.shared ? 'checked' : ''} style="width:auto"> The space is also used for personal things</label>
+    <div id="hHoursRow"><label class="f">Hours a week you use it for work</label><input type="number" id="hHours" value="${esc(h.hours)}" placeholder="e.g. 40"></div>
+    <label class="f">Months you worked from home in ${Y()}</label><input type="number" id="hMonths" value="${esc(h.months || 12)}" min="1" max="12">
+    <h3 style="margin-top:16px">What you paid for the whole home in ${Y()}</h3>
+    <div class="slipbox">${ex.map(([k, l]) => `<div data-hx="${k}"><label class="f">${l}</label><input type="number" inputmode="decimal" id="hx_${k}" value="${esc((h.exp || {})[k] || '')}" placeholder="0.00"></div>`).join('')}</div>
+    <p class="small muted" id="hNote"></p>
+    <div class="row" style="margin-top:14px">${state.homeOffice ? '<button class="btn danger" id="hDel">Remove</button>' : ''}<button class="btn sec" style="flex:1" data-act="close">Cancel</button><button class="btn" style="flex:1" id="hSave">Save</button></div>`);
+  const upd = () => { const emp = $('#hKind').value !== 'self', com = $('#hCom').checked;
+    $('#hComRow').style.display = emp ? '' : 'none'; $('#hHoursRow').style.display = $('#hShared').checked ? '' : 'none';
+    document.querySelectorAll('[data-hx]').forEach(d => { const k = d.dataset.hx; d.style.display = !emp || ['rent','elec','heat','water','internet','maint'].includes(k) || (com && ['insurance','proptax'].includes(k)) ? '' : 'none'; });
+    $('#hNote').textContent = emp ? 'Employees can claim rent, utilities, internet and maintenance (commission employees also insurance and property tax), but not mortgage interest.' : 'Business-use-of-home can\'t create or increase a business loss. Any extra carries forward.'; };
+  ['#hKind','#hCom','#hShared'].forEach(id => $(id).onchange = upd); upd();
+  if ($('#hDel')) $('#hDel').onclick = () => { state.homeOffice = null; closeSheet(); persist(); render(); };
+  $('#hSave').onclick = () => {
+    if (!num($('#hArea').value) || !num($('#hTotal').value)){ toast('Enter both sizes'); return; }
+    if (num($('#hArea').value) > num($('#hTotal').value)){ toast('The work space can\'t be bigger than the home'); return; }
+    const exp = {}; ex.forEach(([k]) => { const v = num($('#hx_' + k).value); if (v) exp[k] = v; });
+    state.homeOffice = { kind:$('#hKind').value === 'self' ? 'self' : 'employee', commission:$('#hCom').checked, area:num($('#hArea').value), total:num($('#hTotal').value),
+      shared:$('#hShared').checked, hours:num($('#hHours').value), months:Math.min(12, Math.max(1, num($('#hMonths').value) || 12)), exp };
+    if (state.homeOffice.kind === 'employee' && !state.answers.wfh) state.answers.wfh = 'yes';
+    closeSheet(); persist(); render(); toast('Saved');
+  };
 }
 
 /* ---------------- income ---------------- */
@@ -930,7 +1189,9 @@ async function importCSV(file){
 /* ---------------- reminders ---------------- */
 async function syncReminders(){
   if (!window.TaxKeepReminders || !TaxKeepReminders.available()) return;
-  const r = await TaxKeepReminders.sync({ ...(state.reminders.on ? state.reminders : { deadlines:false, instalments:false, monthly:false }), selfEmployed: state.profile.selfEmployed }).catch(() => ({ ok:false }));
+  const on = state.reminders.on;
+  const missing = on && state.reminders.deadlines ? reqDocs().filter(d => TaxKeepForms.DOC_SLIPS[d.key] && !state.docsDone[d.key]).map(d => d.label.replace(/ \(.*\)$/, '')) : [];
+  const r = await TaxKeepReminders.sync({ ...(on ? state.reminders : { deadlines:false, instalments:false, monthly:false }), selfEmployed: state.profile.selfEmployed, missing, gst: on ? state.gst : null }).catch(() => ({ ok:false }));
   if (r.ok) remStatus = r.count ? `${r.count} reminders set. Next: "${r.next.title}" on ${r.next.date.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}.` : '';
   else remStatus = r.reason === 'denied' ? 'Notifications are blocked. Turn them on in your phone\'s Settings → Apps → TaxKeep → Notifications.' : '';
   if (tab === 'more') render();
@@ -1122,13 +1383,14 @@ async function doExport(){
 /* ---------------- events ---------------- */
 document.addEventListener('click', async e => {
   if (e.target.closest('label') && e.target.closest('label').querySelector('input[type=file]')) pauseLockFor();
-  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome],[data-slip],[data-seg]');
+  const t = e.target.closest('[data-tab],[data-act],[data-filter],[data-open],[data-ans],[data-mode],[data-delreceipt],[data-delcontrib],[data-delincome],[data-deltrip],[data-editincome],[data-slip],[data-seg],[data-year]');
   if (e.target.id === 'modal') { closeSheet(); return; }
   if (!t) return;
   const d = t.dataset;
   if (d.tab && t.tagName !== 'SELECT'){ tab = d.tab; filter = 'all'; render(); window.scrollTo(0, 0); return; }
   if (d.filter){ filter = d.filter; render(); return; }
   if (d.seg){ formsSeg = d.seg; render(); return; }
+  if (d.year){ state.profile.year = Number(d.year); persist(); tab = 'home'; render(); window.scrollTo(0, 0); return; }
   if (d.slip){ openSlip(d.slip); return; }
   if (d.open){ openReceipt(d.open); return; }
   if (d.ans){ state.answers[d.ans] = d.v; if (d.ans === 'self' && d.v === 'yes' && !state.profile.selfEmployed){ state.profile.selfEmployed = true; toast('Business tools turned on'); } persist(); render(); return; }
@@ -1142,6 +1404,9 @@ document.addEventListener('click', async e => {
     case 'close': closeSheet(); break;
     case 'add': receiptForm(null); break;
     case 'addSlip': slipForm(null); break;
+    case 'goEst': tab = 'checklist'; formsSeg = 'est'; render(); window.scrollTo(0, 0); break;
+    case 'goGst': tab = 'checklist'; formsSeg = 'work'; render(); setTimeout(() => { const el = [...document.querySelectorAll('.ws h3')].find(h => h.textContent === 'GST/HST return'); if (el) el.scrollIntoView(); }, 50); break;
+    case 'homeOffice': homeOfficeForm(); break;
     case 'wsPdf': saveWorksheets(); break;
     case 'demo': addDemo(); break;
     case 'export': doExport(); break;
@@ -1171,6 +1436,10 @@ document.addEventListener('change', e => {
   else if (t.hasAttribute('data-totalkm')){ state.totalKm[Y()] = t.value; persist(); render(); }
   else if (d.prof){ state.profile[d.prof] = t.value; persist(); render(); }
   else if (t.hasAttribute('data-se')){ state.profile.selfEmployed = t.checked; persist(); render(); if (state.reminders.on) syncReminders(); }
+  else if (t.id === 'noaIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) readNOA(f); t.value = ''; }
+  else if (t.id === 'stmtIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) importStatement(f); t.value = ''; }
+  else if (d.gst){ state.gst[d.gst] = t.type === 'checkbox' ? t.checked : t.value; persist(); render(); if (state.reminders.on) syncReminders(); }
+  else if (d.hh){ state.household[d.hh] = t.type === 'checkbox' ? t.checked : t.value; persist(); render(); }
   else if (t.id === 'csvIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) importCSV(f); t.value = ''; }
   else if (d.wait){ state.waitlist[d.wait] = t.checked; persist(); }
   else if (d.rem){ if (!state.reminders.on){ state.reminders = { on:true, deadlines:false, instalments:false, monthly:false }; } state.reminders[d.rem] = t.checked; persist(); syncReminders().then(render); render(); }

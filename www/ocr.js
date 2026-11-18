@@ -100,6 +100,9 @@
     [/restaurant|cafe|coffee|tim horton|starbucks|pizza|grill|bistro|diner|mcdonald|subway|a&w/i, 'b_meals'],
     [/bell\b|rogers|telus|fido|koodo|virgin|freedom mobile|shaw|internet/i, 'b_phone'],
     [/home depot|rona|lowe'?s|canadian tire|princess auto/i, 'b_supplies'],
+    [/parking|impark|easypark|toll\b|407 etr/i, 'b_vehicle'],
+    [/adobe|google \*?workspace|microsoft ?365|zoom\.us|canva|quickbooks|intuit/i, 'b_other'],
+    [/insurance|intact|wawanesa|desjardins ins|mpi\b|autopac/i, 'b_ins'],
   ];
   function guessCategory(text, selfEmployed){
     for (const [re, cat] of CAT_RULES){
@@ -126,5 +129,5 @@
     try { const { data } = await w.recognize(canvas); return data.text || ''; }
     finally { await w.setParameters({ tessedit_pageseg_mode: '3' }).catch(() => {}); }
   }
-  window.TaxKeepOCR = { readReceipt, parseReceipt, readText, warmUp: () => getWorker().catch(() => null) };
+  window.TaxKeepOCR = { readReceipt, parseReceipt, readText, guessCategory, warmUp: () => getWorker().catch(() => null) };
 })();

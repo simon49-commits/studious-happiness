@@ -49,8 +49,29 @@
   const n = v => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
   const sum = a => a.reduce((s, v) => s + n(v), 0);
 
+  // GST/HST rates by province (2026). NS cut its HST to 14% on April 1, 2025.
+  const SALES_TAX = { ON:.13, NB:.15, NL:.15, PE:.15, NS:.14 };
+  const gstRate = prov => SALES_TAX[prov] || .05;
+  const PST = { MB:.07, SK:.06, BC:.07, QC:.09975 }; // receipt totals include these, so take GST out of the right total
+  // Quick method remittance rates for service businesses (CRA RC4058). Only where we're sure of the rate.
+  const QUICK = { AB:.036, BC:.036, MB:.036, SK:.036, QC:.036, NT:.036, NU:.036, YT:.036, ON:.088 };
+  const NO_ITC = new Set(['b_ins','b_fees_exempt']);
+  function homeOfficeCalc(h){
+    if (!h || !n(h.area) || !n(h.total)) return null;
+    let pct = Math.min(1, n(h.area) / n(h.total));
+    if (h.shared) pct *= Math.min(1, n(h.hours) / 168);
+    const months = Math.min(12, Math.max(1, n(h.months) || 12)) / 12;
+    const emp = h.kind !== 'self';
+    const items = [['rent','Rent'],['elec','Electricity'],['heat','Heat'],['water','Water'],['internet','Internet (monthly fees)'],['maint','Maintenance and minor repairs'],
+      ['insurance','Home insurance'],['proptax','Property taxes'],['mortgage','Mortgage interest']];
+    const allowed = k => emp ? (['rent','elec','heat','water','internet','maint'].includes(k) || (h.commission && ['insurance','proptax'].includes(k))) : true;
+    const rows = items.filter(([k]) => n((h.exp || {})[k])).map(([k, l]) => ({ k, label: l, paid: n(h.exp[k]), ok: allowed(k), claim: allowed(k) ? n(h.exp[k]) * pct * months : 0 }));
+    return { pct, months, emp, rows, total: rows.reduce((t, r) => t + r.claim, 0) };
+  }
+
   function build(ctx){
-    const { year, slips, receipts, income, contribs, selfEmployed, province, totalKm, mileage, catLabel } = ctx;
+    const { year, slips, receipts, income, contribs, selfEmployed, province, totalKm, mileage, catLabel, gst, homeOffice, who } = ctx;
+    const ho = homeOfficeCalc(homeOffice);
     const ys = slips.filter(s => Number(s.year) === year);
     const yr = receipts.filter(r => (r.date || '').startsWith(String(year)));
     const yi = income.filter(x => x.year === year);
@@ -93,7 +114,7 @@
       (byLine['21200'] || rc('dues').length) ? { line:'21200', label:'Union, professional or like dues', amount: sum((byLine['21200'] || []).map(x => x.amt)) + rTotal('dues'), src:[byLine['21200'] ? 'T4 box 44' : '', rc('dues').length ? rc('dues').length + ' receipt(s)' : ''].filter(Boolean).join(' + ') } : null,
       rc('childcare').length ? { line:'21400', label:'Child care expenses (Form T778)', amount: rTotal('childcare'), src: rc('childcare').length + ' receipt(s)' } : null,
       rc('moving').length ? { line:'21900', label:'Moving expenses (Form T1-M)', amount: rTotal('moving'), src: rc('moving').length + ' receipt(s)' } : null,
-      rc('employment').length ? { line:'22900', label:'Other employment expenses (Form T777)', amount: rTotal('employment'), src: rc('employment').length + ' receipt(s)' } : null,
+      (rc('employment').length || (ho && ho.emp && ho.total)) ? { line:'22900', label:'Other employment expenses (Form T777)', amount: rTotal('employment') + (ho && ho.emp ? ho.total : 0), src: [rc('employment').length ? rc('employment').length + ' receipt(s)' : '', ho && ho.emp && ho.total ? 'home office ' + Math.round(ho.pct * 100) + '% (T777 Part 4)' : ''].filter(Boolean).join(' + ') } : null,
     ].filter(Boolean);
     sections.push({ id:'deductions', title:'Deductions', form:'T1 – Step 3, net income', rows: dedRows,
       notes:['RRSP contributions made in the first 60 days of next year can count for this year or next.', dedRows.some(r => r.line === '20600') ? 'The pension adjustment is shown for reference; it reduces next year\'s RRSP room.' : ''].filter(Boolean), empty: !dedRows.length });
@@ -133,10 +154,15 @@
         let amt = raw, note = '';
         if (cat === 'b_meals'){ amt = raw * 0.5; note = `50% of ${raw.toFixed(2)}`; }
         if (cat === 'b_vehicle'){ if (usePct !== null){ amt = raw * usePct; note = `${Math.round(usePct * 100)}% business use of ${raw.toFixed(2)}`; } else note = 'Business-use % not set (enter total km)'; }
-        if (cat === 'b_home') note = 'Your preparer applies the business-use share';
+        if (cat === 'b_home'){ if (ho && !ho.emp){ amt = raw * ho.pct; note = `${Math.round(ho.pct * 100)}% of ${raw.toFixed(2)} (workspace share)`; } else note = 'Set up Home office so TaxKeep can apply your workspace share'; }
         return { line: T2125_LINES[cat][0], label: T2125_LINES[cat][1], amount: amt, src: note || `${bizR.filter(r => r.category === cat).length} receipt(s)` };
       }).filter(Boolean);
-      const totalExp = sum(exp.filter(e => e.line !== '9945').map(e => e.amount)), home = sum(exp.filter(e => e.line === '9945').map(e => e.amount));
+      if (ho && !ho.emp && ho.total && !exp.some(e => e.line === '9945')) exp.push({ line:'9945', label: T2125_LINES.b_home[1], amount: ho.total, src: `${Math.round(ho.pct * 100)}% workspace share (Part 7)` });
+      else if (ho && !ho.emp && ho.total){ const h = exp.find(e => e.line === '9945'); h.amount += ho.total; h.src += ' + home costs entered'; }
+      const totalExp = sum(exp.filter(e => e.line !== '9945').map(e => e.amount));
+      let home = sum(exp.filter(e => e.line === '9945').map(e => e.amount));
+      const preHome = gross - totalExp;
+      if (home > Math.max(0, preHome)){ const h = exp.find(e => e.line === '9945'); h.src += ` · limited to ${Math.max(0, preHome).toFixed(2)}: it can't create a loss (rest carries forward)`; home = Math.max(0, preHome); h.amount = home; }
       const rows = [ { line:'Part 3C', label:'Gross business income (logged)', amount: gross, src: `${selfInc.length} payment(s)` } ];
       if (gst) rows.push({ line:'Part 3C', label:'GST/HST collected (not income if registered – check)', amount: gst, src:'' });
       if (t4aBiz) rows.push({ line:'Part 3C', label:'T4A boxes 020 / 048 (may already be in the logged income)', amount: t4aBiz.amount, src: t4aBiz.src });
@@ -145,6 +171,34 @@
       rows.push({ line:'9946', label:'Estimated net income → T1 line 13500', amount: gross - totalExp - home, src:'Before CCA and other adjustments', strong:true });
       sections.push({ id:'t2125', title:'Business income and expenses', form:'T2125 – Statement of Business or Professional Activities', rows,
         notes:[ `Mileage: ${kmBiz.toLocaleString('en-CA')} business km of ${kmTot ? kmTot.toLocaleString('en-CA') : '?'} total km (Part 5).`, 'Capital cost allowance (CCA) for equipment or vehicles is not included here.' ], empty:false });
+    }
+
+    // Home office worksheet
+    if (ho && ho.rows.length){
+      sections.push({ id:'home', title: ho.emp ? 'Home office (employee)' : 'Business-use-of-home', form: ho.emp ? 'T777 Part 4 – work-space-in-the-home expenses (needs T2200)' : 'T2125 Part 7',
+        detail:{ cols:['Expense','Paid','Share','Claim'], rows: ho.rows.map(r => [r.label + (r.ok ? '' : ' (not allowed for salaried employees)'), r.paid, r.ok ? Math.round(ho.pct * 100) + '%' : '–', r.claim]) },
+        total: ho.total, notes: [ `Workspace: ${Math.round(ho.pct * 1000) / 10}% of the home${homeOffice.shared ? ' (shared space, by hours used)' : ''}, ${Math.round(ho.months * 12)} month(s).`,
+          ho.emp ? 'Only if your employer signs Form T2200 and you worked from home more than 50% of the time for at least 4 weeks in a row, or the space is used only for work and to meet clients.' : '' ].filter(Boolean), empty:false });
+    }
+    // GST/HST return worksheet
+    if (gst && gst.registered && (selfInc.length || bizR.length)){
+      const rate = gstRate(province), q = QUICK[province];
+      const sales = sum(selfInc.map(x => x.amount)), collected = sum(selfInc.map(x => x.gst));
+      const kmB = sum(mileage.filter(m => m.year === year).map(m => m.km)), kmT = n(totalKm[year]), use = kmT > 0 ? Math.min(1, kmB / kmT) : 1;
+      let itc = 0, itcEst = 0;
+      bizR.forEach(r => { if (NO_ITC.has(r.category) || r.category === 'b_home') return;
+        let paid = r.gst != null && r.gst !== '' ? n(r.gst) : n(r.amount) * rate / (1 + rate + (PST[province] || 0)); if (r.gst == null || r.gst === '') itcEst++;
+        if (r.category === 'b_meals') paid *= .5; if (r.category === 'b_vehicle') paid *= use; itc += paid; });
+      const rows = [ { line:'101', label:'Sales and other revenue (before GST/HST)', amount: sales, src:`${selfInc.length} payment(s)` },
+        { line:'103', label:'GST/HST collected', amount: collected, src: collected ? 'From your income entries' : 'Enter the GST/HST collected on each payout (your app\'s tax summary shows it)' },
+        { line:'106', label:'Input tax credits (GST/HST paid on business costs)', amount: itc, src: itcEst ? `${itcEst} receipt(s) estimated at ${Math.round(rate * 1000) / 10}% of the total` : 'From your receipts' },
+        { line:'109', label:'Net tax (103 minus 106)', amount: collected - itc, src: collected - itc < 0 ? 'Refund' : 'To pay', strong:true } ];
+      const notes = [ gst.freq === 'quarterly' ? 'Quarterly filer: each quarter is due one month after it ends (Apr 30, Jul 31, Oct 31, Jan 31).' : 'Annual filer with business income: pay by April 30, file by June 15.',
+        'Insurance and residential rent have no GST/HST. Meals count at 50%, vehicle costs at your business-use share.' ];
+      if (q){ const incl = sales + collected; const quick = Math.max(0, incl * q - Math.min(30000, incl) * .01);
+        rows.push({ line:'Quick', label:`Quick method instead (${(q * 100).toFixed(1)}% of sales incl. tax, less 1% of first $30,000)`, amount: quick, src: quick < collected - itc ? `About ${Math.round((collected - itc) - quick)} less than the regular method` : 'Regular method looks better', strong:false });
+        notes.push('The quick method needs Form GST74 filed with CRA before you use it. Your preparer can tell you which suits you.'); }
+      sections.push({ id:'gst', title:'GST/HST return', form:`GST34 – ${year}${gst.freq === 'quarterly' ? ' (whole year; split by quarter when filing)' : ' (annual)'}`, rows, notes, empty:false });
     }
 
     // 6. Detail lists for the preparer
@@ -262,5 +316,5 @@
     return out;
   }
 
-  window.TaxKeepForms = { SLIP_TYPES, SLIP_ORDER, DOC_SLIPS, short, build, pdf, guessType, parseSlip };
+  window.TaxKeepForms = { SLIP_TYPES, SLIP_ORDER, DOC_SLIPS, short, build, pdf, guessType, parseSlip, homeOfficeCalc, gstRate, QUICK };
 })();
