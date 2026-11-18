@@ -35,12 +35,16 @@ window.claude = { use: async function(name){
 </script>
 <style>
 :root{
-  --bg:#f4f6f5; --card:#fff; --ink:#15201c; --muted:#5f6b66; --line:#e2e7e4;
-  --brand:#0f6b52; --brand2:#e6f2ee; --warn:#b4540a; --warnbg:#fdf1e6; --bad:#b42318; --badbg:#fdecea; --ok:#167a3e; --okbg:#e7f5ec;
+  --bg:#f3f6f4; --card:#fff; --ink:#0e1c17; --muted:#5a6a63; --line:#e0e8e3;
+  --brand:#0e7c5d; --brand2:#e2f3eb; --onbrand:#fff; --gold:#e9a23b; --goldbg:#fdf3e2;
+  --hero:linear-gradient(135deg,#17a87f,#0a5944); --heroOwe:linear-gradient(135deg,#d0561a,#8a2f10);
+  --warn:#a8510b; --warnbg:#fdf1e4; --bad:#b42318; --badbg:#fdecea; --ok:#167a3e; --okbg:#e5f5eb;
   --r:14px;
 }
 @media (prefers-color-scheme: dark){
-  :root{--bg:#0f1513; --card:#18211e; --ink:#e7eeeb; --muted:#9aa7a2; --line:#2a3531; --brand:#3fbf97; --brand2:#1b2f28; --warn:#f0a35c; --warnbg:#2e2216; --bad:#f2837a; --badbg:#2f1a18; --ok:#5fcf8b; --okbg:#16291e;}
+  :root{--bg:#0a110f; --card:#121b18; --ink:#e9f1ed; --muted:#8fa19a; --line:#22302a; --brand:#3dd3a0; --brand2:#13281f; --onbrand:#04251a; --gold:#f2b85b; --goldbg:#2b2213;
+    --hero:linear-gradient(135deg,#138f6c,#0a4a39); --heroOwe:linear-gradient(135deg,#b4481a,#6e260d);
+    --warn:#f2a65e; --warnbg:#2c2115; --bad:#f4877d; --badbg:#2e1a18; --ok:#63d391; --okbg:#14281c;}
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
@@ -49,7 +53,9 @@ button,input,select,textarea{font:inherit;color:inherit}
 header{padding:16px 18px 8px;display:flex;align-items:center;justify-content:space-between;gap:8px}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:18px}
 .logo svg{flex:none}
-.badge{font-size:12px;padding:4px 9px;border-radius:99px;background:var(--brand2);color:var(--brand);font-weight:600;white-space:nowrap}
+.badge{font-size:12px;padding:4px 10px;border-radius:99px;background:var(--brand2);color:var(--brand);font-weight:600;white-space:nowrap}
+.logo .wm b{color:var(--brand)}
+.logo{font-size:20px;letter-spacing:-.01em}
 .proto{margin:0 18px 6px;font-size:12px;color:var(--muted)}
 main{flex:1;padding:6px 14px 100px}
 h2{font-size:20px;margin:10px 4px 12px}
@@ -62,7 +68,7 @@ h3{font-size:15px;margin:0 0 8px}
 .small{font-size:13px}
 .row{display:flex;align-items:center;gap:10px}
 .between{justify-content:space-between}
-.btn{border:0;border-radius:10px;padding:10px 14px;font-weight:600;cursor:pointer;background:var(--brand);color:#fff}
+.btn{border:0;border-radius:12px;padding:11px 16px;font-weight:700;cursor:pointer;background:var(--brand);color:var(--onbrand)}
 .btn.sec{background:var(--brand2);color:var(--brand)}
 .btn.ghost{background:transparent;color:var(--brand);padding:6px 8px}
 .btn.danger{background:var(--badbg);color:var(--bad)}
@@ -87,7 +93,7 @@ nav.tabs svg{width:22px;height:22px}
 .amt{font-weight:700;white-space:nowrap}
 .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 10px}
 .chip{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:6px 11px;font-size:13px;white-space:nowrap;cursor:pointer}
-.chip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.chip.on{background:var(--brand);border-color:var(--brand);color:var(--onbrand)}
 label.f{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
 input[type=text],input[type=number],input[type=date],select,textarea{width:100%;padding:10px 11px;border-radius:10px;border:1px solid var(--line);background:var(--bg)}
 textarea{min-height:60px}
@@ -96,7 +102,7 @@ input[type=range],input[type=checkbox]{accent-color:var(--brand)}
 .q:last-child{border-bottom:0}
 .yn{display:flex;gap:6px;margin-top:8px}
 .yn button{flex:1;padding:8px;border-radius:9px;border:1px solid var(--line);background:var(--bg);cursor:pointer;font-weight:600}
-.yn button.yes{background:var(--brand);border-color:var(--brand);color:#fff}
+.yn button.yes{background:var(--brand);border-color:var(--brand);color:var(--onbrand)}
 .yn button.no{background:var(--muted);border-color:var(--muted);color:#fff}
 .doc{display:flex;gap:10px;align-items:flex-start;padding:7px 0}
 .doc input{width:20px;height:20px;margin-top:1px;accent-color:var(--brand);flex:none}
@@ -175,13 +181,14 @@ header{padding-top:max(16px,env(safe-area-inset-top))}
 .wt td.ln{color:var(--brand);font-weight:700;white-space:nowrap;width:1%;padding-right:8px}.wt td.am{text-align:right;white-space:nowrap;font-weight:600}
 .wt tr.strong td{font-weight:700;border-top:2px solid var(--line)}.wt .src{display:block;color:var(--muted);font-size:11.5px}
 .slipbox{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}.slipbox label.f{font-size:12px}
-.est{border-radius:18px;padding:18px;color:#fff;background:var(--brand);margin-bottom:12px;cursor:pointer}.est.owe{background:#9a3412}
+.est{border-radius:20px;padding:18px;color:#fff;background:var(--hero);margin-bottom:12px;cursor:pointer;box-shadow:0 8px 24px rgba(10,89,68,.18);position:relative;overflow:hidden}.est.owe{background:var(--heroOwe);box-shadow:0 8px 24px rgba(138,47,16,.18)}
+.est:after{content:'';position:absolute;right:-40px;top:-40px;width:160px;height:160px;border-radius:50%;background:rgba(255,255,255,.08)}
 .est .big{font-size:30px;font-weight:800;margin:4px 0}.est .sm{opacity:.85;font-size:13px}
-.next{background:var(--brand2);border:1px solid var(--line);border-radius:18px;padding:16px;margin-bottom:12px}
-.next .k{font-size:12px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--brand)}
+.next{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:18px;padding:16px;margin-bottom:12px}
+.next .k{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gold)}
 .next h3{margin:4px 0 4px;font-size:19px}.next p{margin:0 0 12px;color:var(--muted);font-size:14px}
 .bar{height:6px;border-radius:6px;background:var(--line);overflow:hidden;margin:2px 0 12px}.bar i{display:block;height:100%;background:var(--brand)}
-.addbtn{width:100%;border:0;border-radius:16px;padding:15px;font-size:17px;font-weight:700;background:var(--brand);color:#fff;margin-bottom:12px;cursor:pointer}
+.addbtn{width:100%;border:0;border-radius:16px;padding:15px;font-size:17px;font-weight:800;background:var(--brand);color:var(--onbrand);margin-bottom:12px;cursor:pointer;box-shadow:0 6px 18px rgba(14,124,93,.22)}
 .mrow{display:flex;align-items:center;gap:12px;padding:13px 2px;border-bottom:1px solid var(--line);cursor:pointer}.mrow:last-child{border-bottom:0}
 .mrow .ic{width:38px;height:38px;border-radius:11px;background:var(--brand2);color:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
 .mrow .ic svg{width:21px;height:21px}.mrow .grow b{display:block;font-size:15px}.mrow .grow span{font-size:13px;color:var(--muted)}
@@ -194,8 +201,18 @@ header{padding-top:max(16px,env(safe-area-inset-top))}
 <div id="app">
   <header>
     <div class="logo">
-      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect width="28" height="28" rx="8" fill="var(--brand)"/><path d="M8 9h12M8 14h12M8 19h7" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><circle cx="20" cy="19" r="2.4" fill="#fff"/></svg>
-      TaxKeep
+      <svg width="32" height="32" viewBox="0 0 512 512" aria-hidden="true"><defs>
+    <linearGradient id="hbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1BB58A"/><stop offset="1" stop-color="#0A5944"/></linearGradient>
+    <linearGradient id="hgold" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFD27A"/><stop offset="1" stop-color="#F0A532"/></linearGradient>
+  </defs><rect width="512" height="512" rx="116" fill="url(#hbg)"/><g transform="translate(256 256) scale(0.86) translate(-294 -285)"><g id="glyph">
+    <path d="M170 104H342a22 22 0 0 1 22 22V398l-27-20-27 20-27-20-27 20-27-20-27 20-27-20-27 20V126a22 22 0 0 1 22-22Z" fill="#fff"/>
+    <rect x="190" y="160" width="132" height="22" rx="11" fill="#0E7C5D"/>
+    <rect x="190" y="212" width="132" height="22" rx="11" fill="#0E7C5D" opacity=".55"/>
+    <rect x="190" y="264" width="78" height="22" rx="11" fill="#0E7C5D" opacity=".55"/>
+    <circle cx="352" cy="368" r="80" fill="url(#hgold)" stroke="#0C6A50" stroke-width="18"/>
+    <path d="M316 368l26 26 48-52" fill="none" stroke="#0B3D2F" stroke-width="24" stroke-linecap="round" stroke-linejoin="round"/>
+  </g></g></svg>
+      <span class="wm">Tax<b>Keep</b></span>
     </div>
     <span class="badge" id="modeBadge">Loading…</span>
   </header>
@@ -506,6 +523,21 @@ function pickFile(accept, cb){
   const i = document.createElement('input'); i.type = 'file'; i.accept = accept; i.style.display = 'none';
   i.onchange = () => { window.__tkPauseLock = false; const f = i.files && i.files[0]; i.remove(); if (f) cb(f); };
   document.body.appendChild(i); pauseLockFor(); i.click();
+}
+function questionsSheet(){
+  const left = QUESTIONS.filter(q => !state.answers[q.id]);
+  if (!left.length){ closeSheet(); render(); toast('All answered. Thanks!'); return; }
+  const q = left[0], n = QUESTIONS.length - left.length + 1;
+  openSheet(`<div class="small muted">Question ${n} of ${QUESTIONS.length}</div><div class="bar"><i style="width:${Math.round(100 * (n - 1) / QUESTIONS.length)}%"></i></div>
+    <h3 style="font-size:18px;margin:6px 0 16px">${esc(q.q)}</h3>
+    <div class="row"><button class="btn sec" style="flex:1" data-qs="no">No</button><button class="btn" style="flex:1" data-qs="yes">Yes</button></div>
+    <button class="btn ghost block" data-act="close" style="margin-top:10px">Finish later</button>`);
+  $('#sheet').querySelectorAll('[data-qs]').forEach(b => b.onclick = () => {
+    state.answers[q.id] = b.dataset.qs;
+    const ks = Object.keys(KIND_Q).filter(k => KIND_Q[k] === q.id);
+    if (b.dataset.qs === 'yes' && ks.length && !ks.some(has)) setKind(q.id === 'self' ? 'business' : ks[0], true);
+    persist(); questionsSheet(); render();
+  });
 }
 function addMenu(){
   const o = [['add','cam','Receipt','Snap or upload a photo or PDF'],['addSlip','slip','Tax slip','T4, T5, T2202, RRSP receipt…'],['addIncome','income', isSelf() ? (has('gig') && !has('business') ? 'Income or gig payout' : 'Income or business payment') : 'Income','Money you received']];
@@ -1523,7 +1555,7 @@ document.addEventListener('click', async e => {
     case 'addMenu': addMenu(); break;
     case 'allAlerts': showAllAlerts = !showAllAlerts; render(); break;
     case 'goAbout': tab = 'more'; moreSec = 'about'; render(); window.scrollTo(0, 0); break;
-    case 'goQuestions': tab = 'checklist'; formsSeg = 'list'; render(); window.scrollTo(0, 0); break;
+    case 'goQuestions': questionsSheet(); break;
     case 'goSlips': tab = 'checklist'; formsSeg = 'slips'; render(); window.scrollTo(0, 0); break;
     case 'moreHome': tab = 'more'; moreSec = ''; render(); window.scrollTo(0, 0); break;
     case 'stmt': closeSheet(); pickFile('.csv,text/csv,text/plain', importStatement); break;

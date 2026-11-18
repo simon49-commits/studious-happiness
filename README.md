@@ -40,3 +40,8 @@ Checklist answers and these settings stay in sync. Older data is sorted into typ
 - Home: one "Next step" card, one + Add button, a short "Your year" list, top 2 alerts.
 - Tabs: Home, Receipts, Income, Tax forms, More. Savings moved under More.
 - More is a menu with sub-pages. Android back button goes back a level.
+
+## v1.6 – new look
+- New logo (receipt with a gold check), launcher icons and splash screen. Source: `www/logo.svg`.
+- New colours: deeper emerald with a gold accent, better contrast in dark mode.
+- "Answer now" opens the unanswered questions one at a time.
