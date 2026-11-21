@@ -632,7 +632,7 @@ function worksheetSections(){
   return TaxKeepForms.build({ year:Y(), slips:state.slips, receipts, income:state.income, contribs:state.room.contribs, selfEmployed:state.profile.selfEmployed,
     province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel, gst: isSelf() ? state.gst : null, homeOffice:state.homeOffice });
 }
-function worksheetPdf(){ return TaxKeepForms.pdf(worksheetSections().concat(estimateSection()), { year:Y(), name:state.profile.name, province:state.profile.province, date:today() }); }
+function worksheetPdf(){ return packagePdf(); }
 async function saveWorksheets(){
   if (!dl){ toast('Saving isn\'t available on this device.'); return; }
   try { const blob = worksheetPdf(); await dl.save({ filename:`TaxKeep_${Y()}_worksheets.pdf`, data:blob }); toast('Worksheets ready'); }
@@ -858,7 +858,7 @@ function vMore(){
   </div>`,
     export: () => `
   <div class="card"><h3>Your tax package</h3>
-    <p class="small muted">One ZIP with every receipt and slip photo, the tax worksheets (PDF), and summaries for your preparer: receipts, slips, checklist, RRSP/TFSA/FHSA and business. You can save it to Drive or Files, or send it by email.</p>
+    <p class="small muted">One ZIP with two things: a single PDF with your summary, income in detail and worksheets, and a Documents folder with your slips and receipts sorted into folders. Send it to your preparer or save it as a backup.</p>
     <div class="row" style="margin-bottom:8px">${yearPicker()}</div>
     <button class="btn block" data-act="export" ${dl ? '' : 'disabled'}>Save or send ${Y()} package (.zip)</button>
     ${dl ? '' : '<p class="small muted" style="margin-top:6px">Export isn\'t available on this device.</p>'}
@@ -1445,69 +1445,120 @@ async function wipe(){
   receipts = []; state = defaultState(); await store.saveState(state).catch(() => {}); tab = 'home'; render(); toast('All data deleted');
 }
 function csv(rows){ return rows.map(r => r.map(c => { const s = String(c ?? ''); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }).join(',')).join('\r\n'); }
+// File and folder names people can read: "2026-06-02 City Dental Clinic $260.00.jpg"
+const niceName = s => String(s || '').replace(/[\\/:*?"<>|#%]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+function uniquePath(used, path){ if (!used.has(path)){ used.add(path); return path; } const i = path.lastIndexOf('.'); let n = 2, p; do { p = `${path.slice(0, i)} (${n++})${path.slice(i)}`; } while (used.has(p)); used.add(p); return p; }
+function docFolders(usedKeys){
+  // Numbered so they sort in a sensible order (slips, personal claims, business), counting only folders in this package.
+  const order = [['slips', 'Tax slips']].concat(PERSONAL.map(([k, l]) => [k, l]), BUSINESS.map(([k, l]) => [k, 'Business - ' + l]), [['other', 'Other']]);
+  const map = {}; let n = 0; order.filter(([k]) => usedKeys.has(k)).forEach(([k, l]) => { map[k] = `${String(++n).padStart(2, '0')} ${niceName(l)}`; }); return map;
+}
+// Phones don't preview SVG well; turn drawings (sample receipts) into PNG.
+function svgToPng(f){
+  return new Promise(res => { const im = new Image(); im.onload = () => { const c = document.createElement('canvas'); c.width = im.width * 2 || 600; c.height = im.height * 2 || 800;
+    const x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, c.width, c.height); x.drawImage(im, 0, 0, c.width, c.height); res({ name: f.name.replace(/\.svg$/i, '.png'), type:'image/png', dataUrl: c.toDataURL('image/png') }); };
+    im.onerror = () => res(f); im.src = f.dataUrl; });
+}
+// One PDF for the preparer: summary, income in detail, worksheets, estimate, accounts, checklist, receipt index.
+function packagePdf(files){
+  files = files || {};
+  const y = Y(), rs = yearReceipts().slice().sort((a, b) => (a.date || '').localeCompare(b.date || '')), ys = yearSlips(), F = TaxKeepForms;
+  const yi = state.income.filter(x => x.year === y).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+  const secs = worksheetSections(), e = runEstimate(), docs = reqDocs(), R = room();
+  const out = [];
+  // 1. Summary
+  const sum1 = [['Client', state.profile.name || '–'], ['Tax year', String(y)], ['Province', state.profile.province],
+    ['Situation', KINDS.filter(([k]) => has(k)).map(k => k[1]).join(', ') || '–']];
+  if (has('spouse')) sum1.push(['Spouse / partner', (state.household.spouseName || 'Yes') + (state.household.spouseNet !== '' ? ` (net income about ${money(num(state.household.spouseNet))})` : '')]);
+  if (has('kids') && state.household.kids) sum1.push(['Children', state.household.kids]);
+  out.push({ id:'p_client', title:'Client', form:`Prepared ${today()} with TaxKeep`, detail:{ cols:['', ''], rows:sum1 }, empty:false });
+  const ov = [['Tax slips on file', String(ys.length)], ['Income entries logged', String(yi.length)], ['Receipts', `${rs.length} (${money(sum(rs.map(r => r.amount)))})`],
+    ['Documents gathered', docs.length ? `${docs.filter(d => state.docsDone[d.key]).length} of ${docs.length}` : 'Checklist not answered']];
+  if (e && !e.empty) ov.push(['Total income (estimate)', money(e.income)], ['Tax already deducted', money(e.paid)], [e.result >= 0 ? 'Estimated refund' : 'Estimated balance owing', money(Math.abs(e.result)) + (e.provIncluded ? '' : ' (federal only)')]);
+  out.push({ id:'p_over', title:'At a glance', form:'Planning numbers from the client\'s own records', detail:{ cols:['', ''], rows:ov }, empty:false });
+  const folders = Object.entries(files.count || {}).sort((a, b) => a[0].localeCompare(b[0])).map(([f, n]) => [`Documents / ${f}`, `${n} file${n > 1 ? 's' : ''}`]);
+  if (folders.length || files.sheets) out.push({ id:'p_files', title:'What\'s in this package', form:'Files in the Documents folder next to this PDF', detail:{ cols:['Folder', 'Contents'], rows: folders.concat(files.sheets ? [['Documents / Spreadsheets', 'Receipts, income and slips as CSV for tax software']] : []) }, empty:false });
+
+  // 2. Income in detail
+  if (ys.length){
+    const rows = [];
+    ys.forEach(sl => { const d = F.SLIP_TYPES[sl.type] || F.SLIP_TYPES.OTHER;
+      d.boxes.forEach(([code, label, line, kind]) => { const v = (sl.boxes || {})[code]; if (v == null || v === '') return;
+        rows.push([F.short(sl.type) + (sl.label ? ' ' + sl.label : ''), sl.issuer || '', code === 'amt' || code === 'tax' ? '' : code, label + (kind === 'info' ? ' (info)' : ''), kind === 'info' || kind === 'count' ? '' : (line || ''), kind === 'count' ? String(num(v)) : num(v)]); }); });
+    out.push({ id:'p_slips', part:'Income in detail', newPage:true, title:'Tax slips, box by box', form:'Every box entered from the slips. Photos are in Documents / 01 Tax slips.', detail:{ cols:['Slip','Issued by','Box','Description','Line','Amount'], rows }, empty:false });
+  }
+  if (yi.length){
+    out.push({ id:'p_inc', part: ys.length ? '' : 'Income in detail', newPage: !ys.length, title:'Income logged in TaxKeep', form:'Payments the client entered or imported (not from slips)',
+      detail:{ cols:['Date','Type','From','Tax deducted','GST/HST','Amount'], rows: yi.map(x => [x.date || '', x.type === 'self' ? selfLabel() : (INCOME_LABEL[x.type] || x.type), (x.client || '') + (x.imported ? ' (imported)' : ''), num(x.tax) ? money(num(x.tax)) : '', num(x.gst) ? money(num(x.gst)) : '', num(x.amount)]) },
+      total: sum(yi.map(x => x.amount)), empty:false });
+    const by = {}; yi.forEach(x => { const k = x.type === 'self' ? selfLabel() : (INCOME_LABEL[x.type] || x.type); (by[k] = by[k] || []).push(x); });
+    const months = {}; yi.forEach(x => { const m = (x.date || '').slice(0, 7); if (m) months[m] = (months[m] || 0) + num(x.amount); });
+    out.push({ id:'p_incby', title:'Income by type', form:'Totals of the entries above', detail:{ cols:['Type','Entries','Tax deducted','Amount'], rows: Object.entries(by).map(([k, L]) => [k, String(L.length), money(sum(L.map(x => x.tax))), sum(L.map(x => x.amount))]) }, total: sum(yi.map(x => x.amount)), empty:false });
+    if (Object.keys(months).length > 1) out.push({ id:'p_incm', title:'Income by month', form:'Useful for instalments and GST/HST periods', detail:{ cols:['Month','Amount'], rows: Object.keys(months).sort().map(m => [new Date(m + '-15').toLocaleDateString('en-CA', { month:'long', year:'numeric' }), months[m]]) }, empty:false });
+  }
+  // 3. Worksheets by CRA line (skip the slip register; it's covered above)
+  const ws = secs.filter(x => !x.empty && x.id !== 'slips');
+  ws.forEach((x, i) => { if (i === 0){ x.part = 'Worksheets by CRA line'; x.newPage = true; } out.push(x); });
+  // 4. Estimate
+  estimateSection().forEach(x => { x.part = 'Refund estimate'; out.push(x); });
+  // 5. Registered accounts and mileage
+  const acc = [['RRSP', R.rr.set ? money(R.rr.limit) : 'not entered', money(R.rr.used), R.rr.set ? money(R.rr.left) : ''],
+    ['TFSA', R.tf.set ? money(R.tf.limit) : 'not entered', money(R.tf.used), R.tf.set ? money(R.tf.left) : '']];
+  if (R.fh.open) acc.push(['FHSA', money(R.fh.limit), money(R.fh.used), money(R.fh.left)]);
+  out.push({ id:'p_acc', part:'Other details', newPage:true, title:'RRSP, TFSA and FHSA', form:'Room and contributions the client tracked', detail:{ cols:['Account','Limit / room','Contributed','Left'], rows:acc }, empty:false });
+  if (isSelf()){ const B = biz(); if (B.mil.length) out.push({ id:'p_mil', title:'Mileage log', form:`${B.bizKm.toLocaleString('en-CA')} business km of ${B.totalKm ? B.totalKm.toLocaleString('en-CA') : '?'} total km`, detail:{ cols:['Date','Purpose','Km'], rows: B.mil.map(m => [m.date, m.purpose || '', String(m.km)]) }, empty:false }); }
+  if (docs.length) out.push({ id:'p_docs', title:'Document checklist', form:'Based on the client\'s answers', detail:{ cols:['Document','Status'], rows: docs.map(d => [d.label, state.docsDone[d.key] ? 'Gathered' : 'MISSING']) }, empty:false });
+  // 6. Receipt index
+  if (rs.length) out.push({ id:'p_rec', part:'Receipt index', newPage:true, title:'Every receipt', form:'File names match the photos in the Documents folder', detail:{ cols:['Date','Payee','Category','File','Amount'], rows: rs.map(r => [r.date || '', r.vendor || '', catLabel(r.category), (files.paths || {})[r.id] || (r.hasFile ? '' : 'no photo'), num(r.amount)]) }, total: sum(rs.map(r => r.amount)), empty:false });
+  const who = state.profile.name ? ` – ${state.profile.name}` : '';
+  return TaxKeepForms.pdf(out, { year:y, name:state.profile.name, province:state.profile.province, date:today(), title:`Tax package ${y}${who}`, footer:`TaxKeep ${y}${who}` });
+}
 async function doExport(){
   if (!dl){ toast('Export isn\'t available on this device.'); return; }
-  if (!window.JSZip){ toast('The ZIP tool didn’t load. Restart the app and try again.'); return; }
-  const y = Y(), root = `TaxKeep_${y}`, zip = new JSZip(), rs = yearReceipts();
+  if (!window.JSZip || !window.jspdf){ toast('A tool didn’t load. Restart the app and try again.'); return; }
+  const y = Y(), who = state.profile.name ? ` - ${niceName(state.profile.name)}` : '';
+  const root = `TaxKeep ${y}${who}`, zip = new JSZip(), rs = yearReceipts(), ys = yearSlips(), used = new Set();
+  const usedKeys = new Set(rs.filter(r => r.hasFile).map(r => PERSONAL.concat(BUSINESS).some(c => c[0] === r.category) ? r.category : 'other'));
+  if (ys.some(x => x.hasFile)) usedKeys.add('slips');
+  const FOL = docFolders(usedKeys);
+  const files = { paths:{}, count:{}, sheets:true };
+  const addFile = async (folder, base, f) => {
+    if (!f || !f.dataUrl || !f.dataUrl.includes(',')) return '';
+    if (f.type === 'image/svg+xml') f = await svgToPng(f);
+    const path = uniquePath(used, `${folder}/${niceName(base)}.${extFor(f)}`);
+    const [head, body] = f.dataUrl.split(',');
+    if (head.includes(';base64')) zip.file(`${root}/Documents/${path}`, body, { base64:true }); else zip.file(`${root}/Documents/${path}`, decodeURIComponent(body));
+    files.count[folder] = (files.count[folder] || 0) + 1; return path;
+  };
   openSheet(`<div class="empty"><span class="spin"></span><p>Building your ${y} package…</p></div>`);
   try {
-    const rows = [['Date','Store / payee','Category','Type','Amount (CAD)','Note','File in this ZIP']];
-    for (const r of rs){
+    // Documents: slips, then receipts by category
+    const srows = [['Slip','Issued by','Box','Description','CRA line','Amount','File']];
+    for (const sl of ys){
       let path = '';
-      if (r.hasFile){
-        const f = await store.getFile(r.id).catch(() => null);
-        if (f && f.dataUrl && f.dataUrl.includes(',')){
-          path = `Receipts/${safeName(catLabel(r.category))}/${r.date}_${safeName(r.vendor)}_${num(r.amount).toFixed(2)}_${r.id.slice(-4)}.${extFor(f)}`;
-          const [head, body] = f.dataUrl.split(',');
-          if (head.includes(';base64')) zip.file(`${root}/${path}`, body, { base64:true }); else zip.file(`${root}/${path}`, decodeURIComponent(body));
-        }
-      }
-      rows.push([r.date, r.vendor, catLabel(r.category), isBiz(r.category) ? 'Business (T2125)' : 'Personal', num(r.amount).toFixed(2), r.note, path]);
+      if (sl.hasFile) path = await addFile(FOL.slips, `${TaxKeepForms.short(sl.type)} - ${sl.issuer || sl.label || 'slip'}`, await store.getFile('slip_' + sl.id).catch(() => null));
+      const def = TaxKeepForms.SLIP_TYPES[sl.type] || TaxKeepForms.SLIP_TYPES.OTHER;
+      def.boxes.forEach(([code, label, line]) => { if ((sl.boxes || {})[code] != null) srows.push([TaxKeepForms.short(sl.type), sl.issuer, code === 'amt' || code === 'tax' ? '' : code, label, line || '', num(sl.boxes[code]), path]); });
     }
-    zip.file(`${root}/Receipts_summary.csv`, csv(rows));
-    const docs = reqDocs();
-    zip.file(`${root}/Checklist.csv`, csv([['Document','Gathered']].concat(docs.map(d => [d.label, state.docsDone[d.key] ? 'Yes' : 'No']))
-      .concat([[],['Question','Answer']]).concat(QUESTIONS.map(q => [q.q, state.answers[q.id] || 'Not answered']))));
-    const R = room();
-    zip.file(`${root}/RRSP_TFSA_FHSA.csv`, csv([['Account','Limit / room','Contributed','Withdrawn','Left']].concat([
-      ['RRSP', R.rr.set ? R.rr.limit : 'not entered', R.rr.used, '', R.rr.set ? R.rr.left : ''],
-      ['TFSA', R.tf.set ? R.tf.limit : 'not entered', R.tf.used, R.tf.wd, R.tf.set ? R.tf.left : ''],
-      ['FHSA', R.fh.open ? R.fh.limit : 'no FHSA', R.fh.open ? R.fh.used : '', '', R.fh.open ? R.fh.left : '']])
-      .concat([[],['Account','Type','Date','Amount']]).concat(state.room.contribs.filter(x => x.year === y).map(x => [x.acct.toUpperCase(), x.type, x.date, x.amount]))));
+    const rrows = [['Date','Store / payee','Category','Type','Amount (CAD)','Note','File']];
+    for (const r of rs.slice().sort((a, b) => (a.date || '').localeCompare(b.date || ''))){
+      let path = '';
+      if (r.hasFile) path = await addFile(FOL[r.category] || FOL.other, `${r.date} ${r.vendor || 'Receipt'} $${num(r.amount).toFixed(2)}`, await store.getFile(r.id).catch(() => null));
+      files.paths[r.id] = path;
+      rrows.push([r.date, r.vendor, catLabel(r.category), isBiz(r.category) ? 'Business (T2125)' : 'Personal', num(r.amount).toFixed(2), r.note, path]);
+    }
+    // Spreadsheets for tax software, tucked inside Documents
+    const S = `${root}/Documents/Spreadsheets`;
+    zip.file(`${S}/Receipts.csv`, csv(rrows));
+    if (ys.length) zip.file(`${S}/Slips.csv`, csv(srows));
     const yi = state.income.filter(x => x.year === y).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-    if (yi.length) zip.file(`${root}/Income.csv`, csv([['Date','Type','From','Amount','Tax deducted','GST/HST collected']].concat(yi.map(x => [x.date, INCOME_LABEL[x.type] || x.type, x.client, num(x.amount).toFixed(2), num(x.tax) ? num(x.tax).toFixed(2) : '', num(x.gst) ? num(x.gst).toFixed(2) : '']))));
-    const incBy = {}; yi.forEach(x => incBy[x.type] = (incBy[x.type] || 0) + num(x.amount));
-    const incHtml = yi.length ? `<h2>Income</h2><table>${INCOME_TYPES.filter(t => incBy[t[0]]).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${money(incBy[k])}</td></tr>`).join('')}<tr><td>Tax already deducted</td><td>${money(sum(yi.map(x => x.tax)))}</td></tr></table>` : '';
-    let bizHtml = '';
-    if (state.profile.selfEmployed){
-      const B = biz();
-      zip.file(`${root}/Mileage_log.csv`, csv([['Date','Purpose','Business km']].concat(B.mil.map(x => [x.date, x.purpose, x.km])).concat([[],['Total km driven in year', B.totalKm || 'not entered'],['Business km', B.bizKm]])));
-      bizHtml = `<h2>Business (T2125)</h2><table><tr><td>Self-employed income</td><td>${money(B.income)}</td></tr><tr><td>GST/HST collected</td><td>${money(B.gst)}</td></tr><tr><td>Business km / total km</td><td>${B.bizKm} / ${B.totalKm || '?'}</td></tr></table>`;
-    }
-    const byCat = {}; rs.forEach(r => byCat[r.category] = (byCat[r.category] || 0) + num(r.amount));
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${root} summary</title><style>body{font-family:Arial,sans-serif;max-width:760px;margin:30px auto;color:#222}table{border-collapse:collapse;width:100%;margin-bottom:20px}td,th{border-bottom:1px solid #ddd;padding:6px;text-align:left}td:last-child{text-align:right}h1{color:#0f6b52}</style></head><body>
-      <h1>Tax package ${y}</h1><p>${esc(state.profile.name || 'Client')} · ${esc(state.profile.province)} · prepared ${today()} with TaxKeep</p>
-      <h2>Receipts by category</h2><table>${Object.entries(byCat).map(([c, a]) => `<tr><td>${esc(catLabel(c))}</td><td>${money(a)}</td></tr>`).join('')}<tr><th>Total (${rs.length} receipts)</th><th style="text-align:right">${money(sum(rs.map(r => r.amount)))}</th></tr></table>
-      <h2>Documents</h2><table>${docs.map(d => `<tr><td>${esc(d.label)}</td><td>${state.docsDone[d.key] ? '✓ gathered' : 'missing'}</td></tr>`).join('') || '<tr><td>Checklist not answered</td><td></td></tr>'}</table>
-      <h2>Registered accounts</h2><table><tr><td>RRSP contributed / limit</td><td>${money(R.rr.used)} / ${R.rr.set ? money(R.rr.limit) : '?'}</td></tr><tr><td>TFSA contributed / room</td><td>${money(R.tf.used)} / ${R.tf.set ? money(R.tf.limit) : '?'}</td></tr>${R.fh.open ? `<tr><td>FHSA contributed / room</td><td>${money(R.fh.used)} / ${money(R.fh.limit)}</td></tr>` : ''}</table>
-      ${incHtml}${bizHtml}<p style="color:#888;font-size:12px">Organized records only. Not tax advice.</p></body></html>`;
-    zip.file(`${root}/Summary_for_preparer.html`, html);
-    const ys = yearSlips();
-    if (ys.length){
-      const srows = [['Slip','Issued by','Box','Description','Amount','Photo in this ZIP']];
-      for (const sl of ys){
-        let path = '';
-        if (sl.hasFile){ const f = await store.getFile('slip_' + sl.id).catch(() => null);
-          if (f && f.dataUrl && f.dataUrl.includes(',')){ path = `Slips/${safeName(TaxKeepForms.short(sl.type))}_${safeName(sl.issuer)}_${sl.id.slice(-4)}.${extFor(f)}`; const [h, b] = f.dataUrl.split(','); if (h.includes(';base64')) zip.file(`${root}/${path}`, b, { base64:true }); else zip.file(`${root}/${path}`, decodeURIComponent(b)); } }
-        const def = TaxKeepForms.SLIP_TYPES[sl.type] || TaxKeepForms.SLIP_TYPES.OTHER;
-        def.boxes.forEach(([code, label], i) => { if ((sl.boxes || {})[code] != null) srows.push([TaxKeepForms.short(sl.type) + (sl.label ? ' ' + sl.label : ''), sl.issuer, code === 'amt' || code === 'tax' ? '' : code, label, num(sl.boxes[code]), path]); });
-      }
-      zip.file(`${root}/Slips.csv`, csv(srows));
-    }
-    if (window.jspdf && window.TaxKeepForms){ try { zip.file(`${root}/Worksheets_${y}.pdf`, worksheetPdf()); } catch(e){} }
+    if (yi.length) zip.file(`${S}/Income.csv`, csv([['Date','Type','From','Amount','Tax deducted','GST/HST collected']].concat(yi.map(x => [x.date, x.type === 'self' ? selfLabel() : (INCOME_LABEL[x.type] || x.type), x.client, num(x.amount).toFixed(2), num(x.tax) ? num(x.tax).toFixed(2) : '', num(x.gst) ? num(x.gst).toFixed(2) : '']))));
+    if (isSelf()){ const B = biz(); if (B.mil.length) zip.file(`${S}/Mileage.csv`, csv([['Date','Purpose','Business km']].concat(B.mil.map(x => [x.date, x.purpose, x.km])))); }
+    // The one PDF, at the top
+    zip.file(`${root}/${root} - Tax summary.pdf`, packagePdf(files));
     const blob = await zip.generateAsync({ type:'blob' });
     closeSheet();
-    await dl.save({ filename:`${root}_package.zip`, data:blob });
+    await dl.save({ filename:`TaxKeep_${y}${state.profile.name ? '_' + safeName(state.profile.name) : ''}.zip`, data:blob });
     state.lastExport = Date.now(); persist(); render(); toast('Package ready');
   } catch(e){
     closeSheet();

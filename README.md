@@ -45,3 +45,6 @@ Checklist answers and these settings stay in sync. Older data is sorted into typ
 - New logo (receipt with a gold check), launcher icons and splash screen. Source: `www/logo.svg`.
 - New colours: deeper emerald with a gold accent, better contrast in dark mode.
 - "Answer now" opens the unanswered questions one at a time.
+
+## v1.7 – organized package
+Export ZIP now holds one PDF (summary, income box by box and by entry/type/month, worksheets by CRA line, estimate, accounts, mileage, checklist, receipt index) and one Documents folder: numbered sub-folders (Tax slips, then each receipt category) plus Documents/Spreadsheets with CSVs. Files are named like "2026-06-02 City Dental Clinic $260.00.jpg".

@@ -168,7 +168,7 @@
       if (t4aBiz) rows.push({ line:'Part 3C', label:'T4A boxes 020 / 048 (may already be in the logged income)', amount: t4aBiz.amount, src: t4aBiz.src });
       rows.push(...exp);
       rows.push({ line:'9368', label:'Total business expenses (before business-use-of-home)', amount: totalExp, src:'', strong:true });
-      rows.push({ line:'9946', label:'Estimated net income → T1 line 13500', amount: gross - totalExp - home, src:'Before CCA and other adjustments', strong:true });
+      rows.push({ line:'9946', label:'Estimated net income (to T1 line 13500)', amount: gross - totalExp - home, src:'Before CCA and other adjustments', strong:true });
       sections.push({ id:'t2125', title:'Business income and expenses', form:'T2125 – Statement of Business or Professional Activities', rows,
         notes:[ `Mileage: ${kmBiz.toLocaleString('en-CA')} business km of ${kmTot ? kmTot.toLocaleString('en-CA') : '?'} total km (Part 5).`, 'Capital cost allowance (CCA) for equipment or vehicles is not included here.' ], empty:false });
     }
@@ -221,14 +221,15 @@
     const { jsPDF } = window.jspdf; const doc = new jsPDF({ unit:'pt', format:'letter' });
     const money = v => new Intl.NumberFormat('en-CA',{style:'currency',currency:'CAD'}).format(v || 0);
     const W = doc.internal.pageSize.getWidth();
-    doc.setFillColor(15,107,82); doc.rect(0, 0, W, 64, 'F');
-    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text(`Tax worksheets ${meta.year}`, 40, 40);
+    doc.setFillColor(14,124,93); doc.rect(0, 0, W, 64, 'F');
+    doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(18); doc.text(meta.title || `Tax worksheets ${meta.year}`, 40, 40);
     doc.setFont('helvetica','normal'); doc.setFontSize(10); doc.text(`${meta.name || 'Client'} · ${meta.province} · prepared ${meta.date} with TaxKeep`, 40, 56);
     doc.setTextColor(90,90,90); doc.setFontSize(9);
     doc.text('Organized from the client\'s own records and slips. Not a tax return and not tax advice. Check every amount against the original slips and receipts.', 40, 82, { maxWidth: W - 80 });
-    let y = 102;
+    let y = 124;
     sections.filter(s => !s.empty).forEach(s => {
-      if (y > 680){ doc.addPage(); y = 50; }
+      if (y > 680 || (s.newPage && y > 120)){ doc.addPage(); y = 50; }
+      if (s.part){ doc.setTextColor(233,162,59); doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.text(s.part.toUpperCase(), 40, y); y += 16; }
       doc.setTextColor(15,107,82); doc.setFont('helvetica','bold'); doc.setFontSize(13); doc.text(s.title, 40, y);
       doc.setTextColor(110,110,110); doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(s.form || '', 40, y + 13);
       y += 20;
@@ -246,7 +247,11 @@
         doc.autoTable({ ...opts(['Line','Description','Source','Amount'], s.rows2.map(r => [r.line, r.label, r.src || '', money(r.amount)]), 3), columnStyles:{ 0:{ cellWidth:62 }, 3:{ halign:'right', cellWidth:80 } } });
         y = doc.lastAutoTable.finalY + 8;
       }
-      if (s.detail){
+      if (s.detail && s.detail.cols.every(c => !c)){
+        doc.autoTable({ startY:y, body: s.detail.rows, theme:'plain', margin:{ left:40, right:40 }, styles:{ fontSize:9.5, cellPadding:3 },
+          columnStyles:{ 0:{ cellWidth:170, textColor:[90,100,95] }, 1:{ fontStyle:'bold' } } });
+        y = doc.lastAutoTable.finalY + 8;
+      } else if (s.detail){
         doc.autoTable({ ...opts(s.detail.cols, s.detail.rows.map(r => r.map((c, i) => i === s.detail.cols.length - 1 && typeof c === 'number' ? money(c) : (typeof c === 'number' ? money(c) : c))), s.detail.cols.length - 1),
           foot: s.total != null ? [[{ content:'Total', colSpan: s.detail.cols.length - 1 }, money(s.total)]] : undefined, footStyles:{ fillColor:[244,246,245], textColor:[20,20,20], fontStyle:'bold', halign:'right' } });
         y = doc.lastAutoTable.finalY + 8;
@@ -255,7 +260,7 @@
       y += 16;
     });
     const pages = doc.getNumberOfPages();
-    for (let i = 1; i <= pages; i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(150,150,150); doc.text(`TaxKeep worksheets ${meta.year} · page ${i} of ${pages}`, W / 2, doc.internal.pageSize.getHeight() - 20, { align:'center' }); }
+    for (let i = 1; i <= pages; i++){ doc.setPage(i); doc.setFontSize(8); doc.setTextColor(150,150,150); doc.text(`${meta.footer || 'TaxKeep worksheets ' + meta.year} · page ${i} of ${pages}`, W / 2, doc.internal.pageSize.getHeight() - 20, { align:'center' }); }
     return doc.output('blob');
   }
 
