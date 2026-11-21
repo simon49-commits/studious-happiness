@@ -1,7 +1,9 @@
 /* TaxKeep receipt reader: runs Tesseract OCR on the phone (offline) and pulls out store, date and total. */
 (function(){
   let workerPromise = null;
-  function getWorker(onProgress){
+  async function lib(){ if (!window.Tesseract && window.loadScript) await window.loadScript('ocr/tesseract.min.js'); }
+  async function getWorker(onProgress){
+    await lib();
     if (!workerPromise){
       workerPromise = Tesseract.createWorker('eng', 1, {
         workerPath: 'ocr/worker.min.js',
@@ -116,13 +118,13 @@
     return { vendor, date: findDate(text), total: findTotal(lines), category: guessCategory(vendor + '\n' + text, selfEmployed), text };
   }
   async function readReceipt(dataUrl, selfEmployed){
-    if (!window.Tesseract) throw new Error('Reader not loaded');
+    await lib(); if (!window.Tesseract) throw new Error('Reader not loaded');
     const [w, canvas] = await Promise.all([getWorker(), prepare(dataUrl)]);
     const { data } = await w.recognize(canvas);
     return parseReceipt(data.text || '', selfEmployed);
   }
   async function readText(dataUrl){
-    if (!window.Tesseract) throw new Error('Reader not loaded');
+    await lib(); if (!window.Tesseract) throw new Error('Reader not loaded');
     const [w, canvas] = await Promise.all([getWorker(), prepare(dataUrl)]);
     // Slips are grids of boxes: sparse-text mode finds the numbers inside them.
     await w.setParameters({ tessedit_pageseg_mode: '11' });

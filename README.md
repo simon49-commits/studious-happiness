@@ -48,3 +48,9 @@ Checklist answers and these settings stay in sync. Older data is sorted into typ
 
 ## v1.7 – organized package
 Export ZIP now holds one PDF (summary, income box by box and by entry/type/month, worksheets by CRA line, estimate, accounts, mileage, checklist, receipt index) and one Documents folder: numbered sub-folders (Tax slips, then each receipt category) plus Documents/Spreadsheets with CSVs. Files are named like "2026-06-02 City Dental Clinic $260.00.jpg".
+
+## v1.8 – simpler and faster
+- Calmer slate + emerald palette (light and dark).
+- Year picker in the header; one round + button on Home, Receipts, Income and Tax forms.
+- OCR, PDF and ZIP tools load only when needed; calculations cached per screen.
+- No refund estimate until income is entered; warns when a T4 is missing box 14.
