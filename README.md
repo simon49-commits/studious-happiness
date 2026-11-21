@@ -54,3 +54,8 @@ Export ZIP now holds one PDF (summary, income box by box and by entry/type/month
 - Year picker in the header; one round + button on Home, Receipts, Income and Tax forms.
 - OCR, PDF and ZIP tools load only when needed; calculations cached per screen.
 - No refund estimate until income is entered; warns when a T4 is missing box 14.
+
+## v1.9 – cloud backup
+- Sign in with email + password (Supabase, Canada Central). Records go to `public.backups`, photos to the private `vault` bucket under the user id; Row Level Security limits everyone to their own data. Setup SQL: `supabase/setup.sql`.
+- More → Backup: back up now, automatic backup 15 s after changes, restore (automatic on a fresh phone), sign out, delete account.
+- Only the publishable key is in the app; never put the secret key in this repo.
