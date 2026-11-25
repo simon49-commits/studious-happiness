@@ -238,8 +238,9 @@ const PERSONAL = [
   ['tuition','Tuition & education'],['disability','Disability-related'],['accessibility','Home accessibility'],
   ['dues','Union & professional dues'],['employment','Employment expenses'],['rent','Rent / property tax'],['otherp','Other personal']];
 const BUSINESS = [
+  ['b_inventory','Inventory / goods for resale'],['b_wages','Wages & payroll'],
   ['b_adv','Advertising'],['b_meals','Meals & entertainment'],['b_office','Office expenses'],['b_supplies','Supplies'],
-  ['b_fees','Legal & accounting fees'],['b_rent','Business rent'],['b_repairs','Repairs & maintenance'],['b_phone','Phone & internet'],
+  ['b_fees','Legal & accounting fees'],['b_rent','Business rent'],['b_repairs','Repairs & maintenance'],['b_phone','Phone, internet & utilities'],['b_bank','Bank & card fees'],['b_freight','Delivery & freight'],['b_licence','Licences & memberships'],
   ['b_travel','Travel'],['b_vehicle','Vehicle (fuel, repairs, insurance)'],['b_home','Business-use-of-home'],['b_ins','Insurance'],['b_other','Other business']];
 const ALLCATS = Object.fromEntries([...PERSONAL,...BUSINESS]);
 const QUESTIONS = [
@@ -381,7 +382,7 @@ function defaultState(){
     answers:{}, docsDone:{}, room:{ rrspLimit:'', tfsaRoom:'', fhsaOpen:false, fhsaCarry:'', fhsaPrior:'', contribs:[] },
     income:[], mileage:[], totalKm:{}, setAsidePct:25, lastExport:0,
     reminders:{ on:false, deadlines:true, instalments:true, monthly:true }, onboarded:false, waitlist:{}, slips:[],
-    gst:{ registered:false, freq:'annual' }, homeOffice:null, household:{ spouse:false, spouseName:'', spouseNet:'', kids:'', medicalBy:'auto' }, noa:{} };
+    gst:{ registered:false, freq:'annual' }, homeOffice:null, household:{ spouse:false, spouseName:'', spouseNet:'', kids:'', medicalBy:'auto' }, noa:{}, inventory:{} };
 }
 let formsSeg = 'slips';
 let store, state = defaultState(), receipts = [], tab = 'home', filter = 'all', dl = null, cloudOK = null, incomeShowAll = false, remStatus = '';
@@ -450,7 +451,10 @@ function biz(){
   const usePct = totalKm > 0 ? Math.min(1, bizKm / totalKm) : null;
   let exp = 0;
   rs.forEach(r => { let a = num(r.amount); if (r.category === 'b_meals') a *= 0.5; if (r.category === 'b_vehicle' && usePct !== null) a *= usePct; exp += a; });
-  const net = income - exp, setAside = Math.max(0, net) * num(state.setAsidePct) / 100;
+  let net = income - exp;
+  // Use the T2125 worksheet when there is one: it handles inventory, home office and limits the same way the return does.
+  try { const t = worksheetSections().find(x => x.id === 't2125'); const r = t && t.rows.find(x => x.line === '9946'); if (r){ net = num(r.amount); exp = income - net; } } catch(e){}
+  const setAside = Math.max(0, net) * num(state.setAsidePct) / 100;
   return { inc, mil, rs, income, gst, bizKm, totalKm, usePct, exp, net, setAside };
 }
 function nextInstalment(){
@@ -497,7 +501,7 @@ function renderTabs(){
   $('#tabs').innerHTML = list.map(([k, l]) => `<button data-tab="${k}" class="${on === k ? 'on' : ''}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[k]}</svg>${l}</button>`).join('');
 }
 function render(){
-  _memo = {};
+  _memo = {}; INCOME_LABEL.self = selfLabel();
   $('#hdrYear').innerHTML = yearPicker();
   const plus = $('#plus'); if (plus) plus.hidden = !['home','receipts','income','checklist'].includes(tab);
   renderTabs();
@@ -645,7 +649,7 @@ let _memo = {};
 function worksheetSections(){
   if (_memo.ws) return _memo.ws;
   return _memo.ws = TaxKeepForms.build({ year:Y(), slips:state.slips, receipts, income:state.income, contribs:state.room.contribs, selfEmployed:state.profile.selfEmployed,
-    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel, gst: isSelf() ? state.gst : null, homeOffice:state.homeOffice });
+    province:state.profile.province, totalKm:state.totalKm, mileage:state.mileage, catLabel, gst: isSelf() ? state.gst : null, homeOffice:state.homeOffice, inventory:(state.inventory || {})[Y()] });
 }
 function worksheetPdf(){ return packagePdf(); }
 async function saveWorksheets(){
@@ -788,7 +792,7 @@ function vIncome(){
     <div class="card stat"><div class="n">${money(sum(yi.map(x => x.tax)))}</div><div class="l">tax already deducted</div></div>
   </div>
   ${yearSlips().length ? `<div class="card" data-tab="checklist" style="cursor:pointer"><div class="row between"><h3>From your slips</h3><span class="small muted">${yearSlips().length} slip${yearSlips().length === 1 ? '' : 's'} →</span></div><p class="small muted" style="margin:0">See the Worksheets in Tax forms for slip totals by line. Don't also log a slip's totals here, or they'll count twice.</p></div>` : ''}
-  ${Object.keys(byType).length ? `<div class="card"><h3>By type</h3><table class="t">${INCOME_TYPES.filter(t => byType[t[0]]).map(([k, l]) => `<tr><td>${esc(l)}</td><td>${money(byType[k])}</td></tr>`).join('')}</table></div>` : ''}
+  ${Object.keys(byType).length ? `<div class="card"><h3>By type</h3><table class="t">${INCOME_TYPES.filter(t => byType[t[0]]).map(([k, l]) => `<tr><td>${esc(k === 'self' ? selfLabel() : l)}</td><td>${money(byType[k])}</td></tr>`).join('')}</table></div>` : ''}
   <div class="card"><div class="row between"><h3>Income entries</h3><button class="btn sec" data-act="addIncome">+ Add</button></div>
     <div class="list">${show.length ? show.map(x => `<div class="item" data-editincome="${x.id}"><div class="grow"><div class="ell"><b>${esc(x.client || INCOME_LABEL[x.type] || 'Income')}</b></div><div class="small muted ell">${esc(x.date)} · ${esc(INCOME_LABEL[x.type] || 'Income')}${num(x.tax) ? ' · tax ' + money(x.tax) : ''}${num(x.gst) ? ' · GST/HST ' + money(x.gst) : ''}</div></div><div class="amt">${money(x.amount)}</div></div>`).join('') : '<div class="empty small">Add pay from your job, gig apps, EI, interest or anything else you earned.</div>'}</div>
     ${list.length > show.length ? `<button class="btn ghost block" data-act="incomeAll">Show all ${list.length}</button>` : ''}
@@ -825,7 +829,7 @@ function vBusinessParts(){
   return `
   <h2 style="margin-top:22px">${has('gig') && !has('business') ? 'Gig work' : has('business') && !has('gig') ? 'Your business' : 'Self-employed'}</h2>
   <div class="grid2">
-    <div class="card stat"><div class="n">${money(B.income)}</div><div class="l">self-employed income</div></div>
+    <div class="card stat"><div class="n">${money(B.income)}</div><div class="l">${has('business') && !has('gig') ? 'business income' : 'self-employed income'}</div></div>
     <div class="card stat"><div class="n">${money(B.exp)}</div><div class="l">deductible expenses (est.)</div></div>
     <div class="card stat"><div class="n">${money(B.net)}</div><div class="l">net income (est.)</div></div>
     <div class="card stat"><div class="n">${money(B.gst)}</div><div class="l">GST/HST collected</div></div>
@@ -835,6 +839,11 @@ function vBusinessParts(){
     <p>Put aside about <b>${money(B.setAside)}</b> of your ${money(Math.max(0, B.net))} net income.</p>
     <p class="small muted">You pick the %. Self-employed people also pay both halves of CPP, so ask your preparer what % fits you. Next instalment date: ${n.toLocaleDateString('en-CA',{month:'short',day:'numeric'})}. Balance owing is due April 30; your return is due June 15.</p>
   </div>
+  ${has('business') || receipts.some(r => r.category === 'b_inventory') ? `<div class="card"><h3>Business details</h3>
+    <label class="f">Business name</label><input type="text" data-prof="businessName" value="${esc(state.profile.businessName || '')}" placeholder="e.g. Maple Corner Grocery">
+    <p class="small muted" style="margin:12px 0 4px">Sell goods? Enter your stock value so TaxKeep can work out cost of goods sold.</p>
+    <div class="grid2"><div><label class="f">Inventory on Jan 1 ($)</label><input type="number" inputmode="decimal" data-inv="open" value="${esc(((state.inventory || {})[Y()] || {}).open || '')}" placeholder="0.00"></div>
+    <div><label class="f">Inventory on Dec 31 ($)</label><input type="number" inputmode="decimal" data-inv="close" value="${esc(((state.inventory || {})[Y()] || {}).close || '')}" placeholder="0.00"></div></div></div>` : ''}
   ${gstCard()}
   <div class="card"><div class="row between"><h3>Mileage log</h3><button class="btn sec" data-act="addTrip">+ Trip</button></div>
     <label class="f">Total km driven in ${Y()} (odometer end minus start)</label>
@@ -971,7 +980,10 @@ function vMore(){
   </div>`,
     years: () => `${pastYearsCard() || '<div class="empty">No earlier years yet.</div>'}`,
     data: () => `
-  <div class="card"><h3>Data</h3><div class="row"><button class="btn sec" data-act="demo">Add sample data</button><button class="btn danger" data-act="wipe">Delete everything</button></div></div>` };
+  <div class="card"><h3>Try TaxKeep with sample data</h3><p class="small muted" style="margin-top:0">Fake records you can delete any time. They're added to what you already have.</p>
+    <div class="mrow" data-act="demo"><div class="ic">${svg('user')}</div><div class="grow"><b>Worker and family</b><span>A T4 job, medical, donations, RRSP</span></div><div class="chev">›</div></div>
+    <div class="mrow" data-act="demoGrocery"><div class="ic">${svg('box')}</div><div class="grow"><b>Grocery store (big business)</b><span>A full year: $1.3M in sales, 6 staff, about 150 invoices and bills</span></div><div class="chev">›</div></div></div>
+  <div class="card"><h3>Start over</h3><button class="btn danger block" data-act="wipe">Delete everything on this phone</button></div>` };
   S.backup = vBackup;
   if (moreSec && S[moreSec]) return back + S[moreSec]();
   const row = (sec, ic, l, sub, go) => `<div class="mrow" ${go || `data-msec="${sec}"`}><div class="ic">${svg(ic)}</div><div class="grow"><b>${l}</b><span>${sub}</span></div><div class="chev">›</div></div>`;
@@ -1494,7 +1506,7 @@ async function switchMode(target){
 }
 function svgReceipt(vendor, amt, color){
   const s = `<svg xmlns="http://www.w3.org/2000/svg" width="300" height="420"><rect width="300" height="420" fill="#fff"/><rect x="0" y="0" width="300" height="70" fill="${color}"/><text x="20" y="45" font-family="Arial" font-size="22" fill="#fff" font-weight="bold">${vendor}</text>${[110,140,170,200,230].map(y => `<rect x="20" y="${y}" width="${120 + (y % 70)}" height="10" fill="#ddd"/>`).join('')}<line x1="20" y1="290" x2="280" y2="290" stroke="#999" stroke-dasharray="4"/><text x="20" y="330" font-family="Arial" font-size="20" fill="#333">TOTAL</text><text x="280" y="330" text-anchor="end" font-family="Arial" font-size="20" font-weight="bold" fill="#333">$${amt.toFixed(2)}</text><text x="20" y="390" font-family="Arial" font-size="12" fill="#999">SAMPLE RECEIPT</text></svg>`;
-  return 'data:image/svg+xml;base64,' + btoa(s);
+  return 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(s)));
 }
 async function addDemo(){
   const y = Y();
@@ -1526,6 +1538,63 @@ async function addDemo(){
   }
   persist(); render(); toast('Sample data added');
 }
+// Sample: a busy neighbourhood grocery store run as a sole proprietorship. All names are made up.
+async function addGroceryDemo(){
+  const y = Y(), mon = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+  const dd = (m, d) => `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+  const r2 = v => Math.round(v * 100) / 100;
+  openSheet(`<div class="empty"><span class="spin"></span><p id="demoMsg">Building a year of grocery store records…</p></div>`);
+  ['business'].forEach(k => { if (!has(k)) setKind(k, true); });
+  state.profile.businessName = state.profile.businessName || 'Maple Corner Grocery (sample)';
+  Object.assign(state.gst, { registered:true, freq:'quarterly' });
+  state.inventory = state.inventory || {}; state.inventory[y] = { open:'86500', close:'91200' };
+  // Sales by month (before GST). About 30% of sales are taxable items (snacks, drinks, household goods); basic groceries are zero-rated.
+  const sales = [96, 92, 101, 104, 110, 112, 118, 116, 108, 106, 103, 124].map(k => k * 1000 + Math.round(Math.random() * 900));
+  sales.forEach((amt, m) => state.income.push({ id:newId(), year:y, date:dd(m, 28), type:'self', client:`Store sales – ${mon[m]} (cash, debit and card)`, amount:amt, tax:0, gst:r2(amt * 0.30 * 0.05) }));
+  const items = []; // [vendor, amount, category, date, colour, gst, photo, note]
+  const sup = [['Prairie Wholesale Foods', 0.35, 0.10, '#1d4ed8'], ['Red River Produce Co.', 0.17, 0, '#15803d'], ['Assiniboine Dairy Co-op', 0.10, 0, '#0e7490'], ['Northgate Beverage Distributors', 0.08, 1, '#b91c1c']];
+  sales.forEach((amt, m) => {
+    sup.forEach(([v, share, taxable, col], i) => { const a = r2(amt * share * (0.97 + Math.random() * 0.06)); items.push([v, a, 'b_inventory', dd(m, 5 + i * 6), col, r2(a * taxable * 0.05 / (1 + taxable * 0.05)), true, 'Goods for resale']); });
+    items.push([`Payroll – ${mon[m]} (6 staff)`, r2(13600 + Math.random() * 900), 'b_wages', dd(m, 27), '', null, false, 'Gross pay plus employer CPP and EI']);
+    items.push(['Kildonan Plaza Holdings (rent)', 5775, 'b_rent', dd(m, 1), '#6d28d9', 275, true, 'Store rent incl. GST']);
+    items.push(['City Hydro & Gas', r2(1500 + (m < 3 || m > 9 ? 450 : 150) + Math.random() * 120), 'b_phone', dd(m, 18), '#ca8a04', null, true, 'Coolers and freezers run all day']);
+    items.push(['Prairie Telecom (phone + internet)', 189, 'b_phone', dd(m, 12), '#7c3aed', 9, true, '']);
+    items.push([`Card processing – ${mon[m]} statement`, r2(amt * 0.0105), 'b_bank', dd(m, 28), '', null, false, 'Debit and credit card fees']);
+    items.push(['Speedy Courier & Freight', r2(380 + Math.random() * 120), 'b_freight', dd(m, 22), '#ea580c', null, true, '']);
+    items.push(['Fuel – delivery van', r2(340 + Math.random() * 90), 'b_vehicle', dd(m, 15), '#d71920', null, true, '']);
+    items.push(['ShelfPOS software', 89, 'b_other', dd(m, 3), '#0f766e', 4.24, true, 'Point-of-sale subscription']);
+  });
+  items.push(['Prairie Mutual Insurance', 7400, 'b_ins', dd(0, 10), '#334155', null, true, 'Store and liability insurance'],
+    ['Food handler & business licence', 650, 'b_licence', dd(1, 2), '#475569', null, true, ''],
+    ['Coolstream Refrigeration', 3850, 'b_repairs', dd(6, 14), '#0369a1', null, true, 'Walk-in cooler compressor'],
+    ['Coolstream Refrigeration', 1240, 'b_repairs', dd(10, 3), '#0369a1', null, true, ''],
+    ['Northend Print (flyers)', 1450, 'b_adv', dd(2, 1), '#be185d', null, true, 'Spring flyer'], ['Northend Print (flyers)', 1450, 'b_adv', dd(5, 1), '#be185d', null, true, ''],
+    ['Northend Print (flyers)', 1450, 'b_adv', dd(8, 1), '#be185d', null, true, ''], ['Northend Print (flyers)', 1850, 'b_adv', dd(11, 1), '#be185d', null, true, 'Holiday flyer'],
+    ['Lakeview Accounting', 3200, 'b_fees', dd(3, 20), '#1e3a8a', null, true, 'Last year\'s books and return'],
+    ['OfficeMart', 186.4, 'b_office', dd(1, 9), '#cc0000', null, true, 'Receipt paper, labels'], ['OfficeMart', 142.1, 'b_office', dd(7, 11), '#cc0000', null, true, ''],
+    ['Clean Pro Supply', 612, 'b_supplies', dd(4, 6), '#16a34a', null, true, 'Cleaning supplies, bags'], ['Clean Pro Supply', 588, 'b_supplies', dd(10, 9), '#16a34a', null, true, ''],
+    ['Supplier lunch meeting', 96.5, 'b_meals', dd(8, 17), '#a16207', null, true, '']);
+  let i = 0;
+  try {
+  for (const [v, a, c, d, col, gst, photo, note] of items){
+    const m = { id:newId(), vendor:v, amount:a, category:c, date:d, note: note ? note + ' (sample)' : 'Sample', hasFile:!!photo, created:Date.now(), fileAt:Date.now() };
+    if (gst != null) m.gst = gst;
+    if (photo){ m.fileType = 'image/svg+xml'; m.fileName = 'sample.svg'; await store.putFile(m.id, { name:safeName(v) + '.svg', type:'image/svg+xml', dataUrl:svgReceipt(v, a, col) }); }
+    await store.putReceipt(m); receipts.push(m);
+    if (++i % 20 === 0){ const el = document.getElementById('demoMsg'); if (el) el.textContent = `Adding invoices and bills… ${i} of ${items.length}`; }
+  }
+  } catch(e){ closeSheet(); persist(); render(); toast('Could not finish the sample: ' + e.message); return; }
+  receipts.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  // Delivery van mileage, logged monthly
+  sales.forEach((_, m) => state.mileage.push({ id:newId(), year:y, date:dd(m, 28), km: 1650 + Math.round(Math.random() * 250), purpose:`Supplier pickups and deliveries – ${mon[m]}` }));
+  state.totalKm[y] = '26000';
+  state.slips.push({ id:newId(), type:'T5', year:y, issuer:'Sample credit union (business savings)', boxes:{ '13':412.6 } });
+  state.room.contribs.push({ id:newId(), year:y, acct:'rrsp', type:'contrib', date:`${y}-02-25`, amount:12000 });
+  if (state.room.rrspLimit === '') state.room.rrspLimit = '24000';
+  Object.assign(state.answers, { self:'yes', rrsp:'yes', invest:'yes', moved:'no', student:'no', kids: state.answers.kids || 'no', medical: state.answers.medical || 'no', donate: state.answers.donate || 'no' });
+  persist(); closeSheet(); tab = 'income'; render(); window.scrollTo(0, 0);
+  toast(`Added a year of grocery store records (${items.length} bills and invoices)`);
+}
 async function wipe(){
   for (const m of receipts){ if (m.hasFile) await store.deleteFile(m.id).catch(() => {}); await store.deleteReceipt(m.id).catch(() => {}); }
   for (const sl of state.slips) await store.deleteFile('slip_' + sl.id).catch(() => {});
@@ -1556,6 +1625,7 @@ function packagePdf(files){
   // 1. Summary
   const sum1 = [['Client', state.profile.name || '–'], ['Tax year', String(y)], ['Province', state.profile.province],
     ['Situation', KINDS.filter(([k]) => has(k)).map(k => k[1]).join(', ') || '–']];
+  if (state.profile.businessName) sum1.push(['Business', state.profile.businessName]);
   if (has('spouse')) sum1.push(['Spouse / partner', (state.household.spouseName || 'Yes') + (state.household.spouseNet !== '' ? ` (net income about ${money(num(state.household.spouseNet))})` : '')]);
   if (has('kids') && state.household.kids) sum1.push(['Children', state.household.kids]);
   out.push({ id:'p_client', title:'Client', form:`Prepared ${today()} with TaxKeep`, detail:{ cols:['', ''], rows:sum1 }, empty:false });
@@ -1689,6 +1759,7 @@ document.addEventListener('click', async e => {
     case 'homeOffice': homeOfficeForm(); break;
     case 'wsPdf': saveWorksheets(); break;
     case 'demo': addDemo(); break;
+    case 'demoGrocery': addGroceryDemo(); break;
     case 'export': doExport(); break;
     case 'addMenu': addMenu(); break;
     case 'goBackup': tab = 'more'; moreSec = 'backup'; render(); window.scrollTo(0, 0); break;
@@ -1735,6 +1806,7 @@ document.addEventListener('change', e => {
   else if (t.id === 'noaIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) readNOA(f); t.value = ''; }
   else if (t.id === 'stmtIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) importStatement(f); t.value = ''; }
   else if (d.gst){ state.gst[d.gst] = t.type === 'checkbox' ? t.checked : t.value; persist(); render(); if (state.reminders.on) syncReminders(); }
+  else if (d.inv){ state.inventory = state.inventory || {}; const k = Y(); state.inventory[k] = { ...(state.inventory[k] || {}), [d.inv]: t.value }; persist(); render(); }
   else if (d.hh){ state.household[d.hh] = t.type === 'checkbox' ? t.checked : t.value; persist(); render(); }
   else if (t.id === 'csvIn'){ const f = t.files && t.files[0]; window.__tkPauseLock = false; if (f) importCSV(f); t.value = ''; }
   else if (d.wait){ state.waitlist[d.wait] = t.checked; persist(); }

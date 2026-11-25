@@ -59,3 +59,10 @@ Export ZIP now holds one PDF (summary, income box by box and by entry/type/month
 - Sign in with email + password (Supabase, Canada Central). Records go to `public.backups`, photos to the private `vault` bucket under the user id; Row Level Security limits everyone to their own data. Setup SQL: `supabase/setup.sql`.
 - More → Backup: back up now, automatic backup 15 s after changes, restore (automatic on a fresh phone), sign out, delete account.
 - Only the publishable key is in the app; never put the secret key in this repo.
+
+## v1.10 – retail businesses
+- New business categories: inventory / goods for resale (T2125 Part 4), wages & payroll (9060), bank & card fees (8710), delivery & freight (9275), licences & memberships (8760).
+- Cost of goods sold from opening/closing inventory; gross profit and margin.
+- GST/HST: inventory counts only the GST shown on invoices (basic groceries are zero-rated); no quick-method comparison for resellers.
+- Business name in the summary PDF.
+- Sample data: "Grocery store (big business)", a full year with about $1.3M in sales and about 158 bills/invoices.

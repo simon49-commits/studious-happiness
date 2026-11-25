@@ -44,6 +44,8 @@
     b_adv:['8521','Advertising'], b_meals:['8523','Meals and entertainment (50% allowable)'], b_ins:['8690','Insurance'],
     b_office:['8810','Office expenses'], b_supplies:['8811','Office stationery and supplies'], b_fees:['8860','Professional fees (legal, accounting)'],
     b_rent:['8910','Rent'], b_repairs:['8960','Repairs and maintenance'], b_travel:['9200','Travel expenses'], b_phone:['9220','Telephone and utilities'],
+    b_bank:['8710','Interest and bank charges (incl. card processing fees)'], b_licence:['8760','Business taxes, licences and memberships'],
+    b_wages:['9060','Salaries, wages and benefits (incl. employer CPP/EI)'], b_freight:['9275','Delivery, freight and express'],
     b_vehicle:['9281','Motor vehicle expenses (business-use share)'], b_other:['9270','Other expenses'], b_home:['9945','Business-use-of-home expenses (Part 7)'] };
 
   const n = v => { const x = parseFloat(v); return isFinite(x) ? x : 0; };
@@ -55,7 +57,7 @@
   const PST = { MB:.07, SK:.06, BC:.07, QC:.09975 }; // receipt totals include these, so take GST out of the right total
   // Quick method remittance rates for service businesses (CRA RC4058). Only where we're sure of the rate.
   const QUICK = { AB:.036, BC:.036, MB:.036, SK:.036, QC:.036, NT:.036, NU:.036, YT:.036, ON:.088 };
-  const NO_ITC = new Set(['b_ins','b_fees_exempt']);
+  const NO_ITC = new Set(['b_ins','b_wages','b_bank','b_licence']); // no GST/HST charged on these
   function homeOfficeCalc(h){
     if (!h || !n(h.area) || !n(h.total)) return null;
     let pct = Math.min(1, n(h.area) / n(h.total));
@@ -70,7 +72,7 @@
   }
 
   function build(ctx){
-    const { year, slips, receipts, income, contribs, selfEmployed, province, totalKm, mileage, catLabel, gst, homeOffice, who } = ctx;
+    const { year, slips, receipts, income, contribs, selfEmployed, province, totalKm, mileage, catLabel, gst, homeOffice, who, inventory } = ctx;
     const ho = homeOfficeCalc(homeOffice);
     const ys = slips.filter(s => Number(s.year) === year);
     const yr = receipts.filter(r => (r.date || '').startsWith(String(year)));
@@ -159,18 +161,31 @@
       }).filter(Boolean);
       if (ho && !ho.emp && ho.total && !exp.some(e => e.line === '9945')) exp.push({ line:'9945', label: T2125_LINES.b_home[1], amount: ho.total, src: `${Math.round(ho.pct * 100)}% workspace share (Part 7)` });
       else if (ho && !ho.emp && ho.total){ const h = exp.find(e => e.line === '9945'); h.amount += ho.total; h.src += ' + home costs entered'; }
+      // Part 4: cost of goods sold (retail and resale businesses)
+      const purchases = sum(bizR.filter(r => r.category === 'b_inventory').map(r => r.amount));
+      const inv = inventory || {}, open = n(inv.open), close = n(inv.close);
+      const cogs = purchases || open || close ? open + purchases - close : 0;
       const totalExp = sum(exp.filter(e => e.line !== '9945').map(e => e.amount));
       let home = sum(exp.filter(e => e.line === '9945').map(e => e.amount));
-      const preHome = gross - totalExp;
+      const preHome = gross - cogs - totalExp;
       if (home > Math.max(0, preHome)){ const h = exp.find(e => e.line === '9945'); h.src += ` · limited to ${Math.max(0, preHome).toFixed(2)}: it can't create a loss (rest carries forward)`; home = Math.max(0, preHome); h.amount = home; }
       const rows = [ { line:'Part 3C', label:'Gross business income (logged)', amount: gross, src: `${selfInc.length} payment(s)` } ];
       if (gst) rows.push({ line:'Part 3C', label:'GST/HST collected (not income if registered – check)', amount: gst, src:'' });
       if (t4aBiz) rows.push({ line:'Part 3C', label:'T4A boxes 020 / 048 (may already be in the logged income)', amount: t4aBiz.amount, src: t4aBiz.src });
+      if (cogs){
+        rows.push({ line:'8300', label:'Opening inventory', amount: open, src: open ? '' : 'Not entered' },
+          { line:'8320', label:'Purchases during the year (goods for resale)', amount: purchases, src: `${bizR.filter(r => r.category === 'b_inventory').length} supplier invoice(s)` },
+          { line:'8500', label:'Closing inventory (subtracted)', amount: -close, src: close ? 'Count at year end' : 'Not entered yet' },
+          { line:'8518', label:'Cost of goods sold', amount: cogs, src:'', strong:true },
+          { line:'8519', label:'Gross profit', amount: gross - cogs, src: gross ? `${Math.round((gross - cogs) / gross * 1000) / 10}% margin` : '', strong:true });
+      }
       rows.push(...exp);
       rows.push({ line:'9368', label:'Total business expenses (before business-use-of-home)', amount: totalExp, src:'', strong:true });
-      rows.push({ line:'9946', label:'Estimated net income (to T1 line 13500)', amount: gross - totalExp - home, src:'Before CCA and other adjustments', strong:true });
+      rows.push({ line:'9946', label:'Estimated net income (to T1 line 13500)', amount: gross - cogs - totalExp - home, src:'Before CCA and other adjustments', strong:true });
       sections.push({ id:'t2125', title:'Business income and expenses', form:'T2125 – Statement of Business or Professional Activities', rows,
-        notes:[ `Mileage: ${kmBiz.toLocaleString('en-CA')} business km of ${kmTot ? kmTot.toLocaleString('en-CA') : '?'} total km (Part 5).`, 'Capital cost allowance (CCA) for equipment or vehicles is not included here.' ], empty:false });
+        notes:[ `Mileage: ${kmBiz.toLocaleString('en-CA')} business km of ${kmTot ? kmTot.toLocaleString('en-CA') : '?'} total km (Part 5).`, 'Capital cost allowance (CCA) for equipment or vehicles is not included here.',
+          gst && gst.registered ? 'Expenses include the GST/HST paid. If you claim it back as input tax credits, your preparer takes it out of these expenses.' : '',
+          cogs && !close ? 'Enter your closing inventory (the value of stock on hand at year end) so cost of goods sold is right.' : '' ].filter(Boolean), empty:false });
     }
 
     // Home office worksheet
@@ -187,6 +202,7 @@
       const kmB = sum(mileage.filter(m => m.year === year).map(m => m.km)), kmT = n(totalKm[year]), use = kmT > 0 ? Math.min(1, kmB / kmT) : 1;
       let itc = 0, itcEst = 0;
       bizR.forEach(r => { if (NO_ITC.has(r.category) || r.category === 'b_home') return;
+        if (r.category === 'b_inventory' && (r.gst == null || r.gst === '')) return; // goods for resale: only the GST shown on the invoice
         let paid = r.gst != null && r.gst !== '' ? n(r.gst) : n(r.amount) * rate / (1 + rate + (PST[province] || 0)); if (r.gst == null || r.gst === '') itcEst++;
         if (r.category === 'b_meals') paid *= .5; if (r.category === 'b_vehicle') paid *= use; itc += paid; });
       const rows = [ { line:'101', label:'Sales and other revenue (before GST/HST)', amount: sales, src:`${selfInc.length} payment(s)` },
@@ -195,7 +211,9 @@
         { line:'109', label:'Net tax (103 minus 106)', amount: collected - itc, src: collected - itc < 0 ? 'Refund' : 'To pay', strong:true } ];
       const notes = [ gst.freq === 'quarterly' ? 'Quarterly filer: each quarter is due one month after it ends (Apr 30, Jul 31, Oct 31, Jan 31).' : 'Annual filer with business income: pay by April 30, file by June 15.',
         'Insurance and residential rent have no GST/HST. Meals count at 50%, vehicle costs at your business-use share.' ];
-      if (q){ const incl = sales + collected; const quick = Math.max(0, incl * q - Math.min(30000, incl) * .01);
+      const resale = bizR.some(r => r.category === 'b_inventory');
+      if (resale) notes.push('Basic groceries are zero-rated: no GST/HST is charged on them, so only taxable items count in line 103. The quick method uses different rates for stores that resell goods, so it isn\'t compared here.');
+      if (q && !resale){ const incl = sales + collected; const quick = Math.max(0, incl * q - Math.min(30000, incl) * .01);
         rows.push({ line:'Quick', label:`Quick method instead (${(q * 100).toFixed(1)}% of sales incl. tax, less 1% of first $30,000)`, amount: quick, src: quick < collected - itc ? `About ${Math.round((collected - itc) - quick)} less than the regular method` : 'Regular method looks better', strong:false });
         notes.push('The quick method needs Form GST74 filed with CRA before you use it. Your preparer can tell you which suits you.'); }
       sections.push({ id:'gst', title:'GST/HST return', form:`GST34 – ${year}${gst.freq === 'quarterly' ? ' (whole year; split by quarter when filing)' : ' (annual)'}`, rows, notes, empty:false });
